@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu, Tray, dialog, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const StremioPlaylistServer = require('./index');
 
 class ElectronApp {
@@ -7,7 +8,7 @@ class ElectronApp {
     this.mainWindow = null;
     this.tray = null;
     this.server = null;
-    this.serverPort = 3000;
+    this.serverPort = this.loadPortFromConfig();
     this.secureAddonsUrl = null;
     
     // Parse command line arguments for secureAddons URL
@@ -15,6 +16,13 @@ class ElectronApp {
     
     // Set up app event handlers
     this.setupAppHandlers();
+  }
+
+  loadPortFromConfig() {
+    const configPath = path.join(__dirname, 'config.json');
+    const configData = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(configData);
+    return config.server.port;
   }
 
   parseCommandLineArgs() {

@@ -45,15 +45,17 @@ A powerful desktop application that generates M3U playlists from Debridio and ot
 Build standalone desktop applications:
 
 ```bash
-# Windows installer
+# Windows installer (run as Administrator)
 npm run build-win
 
-# macOS DMG
+# macOS DMG (may require sudo)
 npm run build-mac
 
-# Linux AppImage
+# Linux AppImage (may require sudo)
 npm run build-linux
 ```
+
+**Note:** On Windows, run Command Prompt or PowerShell as Administrator. On macOS/Linux, you may need to use `sudo` if you encounter permission errors during the build process.
 
 ### Server Mode (Legacy)
 
@@ -70,7 +72,7 @@ The application is configured via the `config.json` file:
 ```json
 {
   "server": {
-    "port": 3000,
+    "port": 3333,
     "host": "localhost"
   },
   "stremio": {
@@ -113,7 +115,7 @@ The application is configured via the `config.json` file:
 ### Configuration Options
 
 #### Server Settings
-- `port`: Port number for the web server (default: 3000)
+- `port`: Port number for the web server (default: 3333)
 - `host`: Host address to bind to (default: localhost)
 
 #### Addon Settings
@@ -232,7 +234,7 @@ Returns detailed server and playlist status information.
     "refreshInterval": "0 0 * * * *"
   },
   "config": {
-    "port": 3000,
+    "port": 3333,
     "enabledAddons": [...],
     "categories": [...]
   }
@@ -325,12 +327,12 @@ Once launched, access these features:
    ```
 
 2. **Access your playlist**:
-   - Direct download: `http://localhost:3000/playlist`
-   - Server status: `http://localhost:3000/status`
-   - Manual refresh: `POST http://localhost:3000/refresh`
+   - Direct download: `http://localhost:3333/playlist`
+   - Server status: `http://localhost:3333/status`
+   - Manual refresh: `POST http://localhost:3333/refresh`
 
 3. **Use in media players**:
-   Add `http://localhost:3000/playlist` as a playlist URL in your media player
+   Add `http://localhost:3333/playlist` as a playlist URL in your media player
 
 ## Cross-Platform Deployment
 
