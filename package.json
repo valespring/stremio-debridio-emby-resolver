@@ -1,0 +1,23 @@
+{
+  "name": "stremio-emby-playlist",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Node.js application that generates M3U playlists from Stremio and Debridio with hourly refresh for Emby compatibility",
+  "dependencies": {
+    "express": "^5.1.0",
+    "axios": "^1.6.0",
+    "node-cron": "^3.0.3",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}

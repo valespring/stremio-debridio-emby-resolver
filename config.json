@@ -1,0 +1,40 @@
+{
+  "server": {
+    "port": 3000,
+    "host": "localhost"
+  },
+  "stremio": {
+    "apiUrl": "http://127.0.0.1:11470",
+    "userAgent": "Stremio/4.4.0",
+    "timeout": 10000
+  },
+  "playlist": {
+    "outputPath": "./playlist.m3u",
+    "name": "Stremio Playlist",
+    "refreshInterval": "0 0 * * * *",
+    "maxRetries": 3,
+    "retryDelay": 5000
+  },
+  "logging": {
+    "level": "info",
+    "enableConsole": true,
+    "enableFile": false,
+    "logFile": "./logs/app.log"
+  },
+  "sources": {
+    "enabledAddons": [
+      "com.linvo.cinemeta",
+      "com.stremio.local"
+    ],
+    "categories": [
+      "movie",
+      "series"
+    ],
+    "filters": {
+      "minYear": 2000,
+      "maxYear": 2024,
+      "genres": [],
+      "languages": ["en"]
+    }
+  }
+}
