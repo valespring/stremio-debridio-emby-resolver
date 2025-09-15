@@ -38,12 +38,7 @@
     },
     "files": [
       "**/*",
-      "!dist/**/*",
-      "!node_modules/**/*",
-      "node_modules/express/**/*",
-      "node_modules/axios/**/*",
-      "node_modules/node-cron/**/*",
-      "node_modules/fs-extra/**/*"
+      "!dist/**/*"
     ],
     "mac": {
       "category": "public.app-category.utilities",
