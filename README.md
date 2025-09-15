@@ -1,24 +1,28 @@
-# Stremio M3U Playlist Generator
+# Debridio Emby Resolver
 
-A Node.js/Express application that automatically generates M3U playlists from Stremio content with hourly refresh functionality.
+A powerful desktop application that generates M3U playlists from Debridio and other streaming addons with advanced logo enhancement and caching capabilities.
 
 ## Features
 
-- 🎬 **Automatic Content Fetching**: Retrieves content from Stremio addons
-- 📺 **M3U Playlist Generation**: Creates properly formatted M3U playlists
-- ⏰ **Scheduled Refresh**: Automatically updates playlists every hour (configurable)
-- 🔧 **Configurable Settings**: Easy configuration via JSON file
-- 🌐 **REST API**: Manual refresh and status endpoints
-- 📊 **Logging System**: Comprehensive logging with configurable levels
-- 🔄 **Cross-Platform**: Works on Windows, macOS, and Linux
-- 💾 **Backup System**: Automatic backup of existing playlists
+- 🖥️ **Desktop Application**: Cross-platform Electron app with system tray integration
+- 🎬 **Automatic Content Fetching**: Retrieves content from Debridio and other streaming addons
+- 📺 **M3U Playlist Generation**: Creates properly formatted M3U playlists with enhanced logos
+- 🖼️ **Advanced Logo System**: Downloads and caches high-quality logos from Wikimedia Commons
+- ⚡ **Two-Phase Enhancement**: Fast initial playlist + background logo improvement
+- 🔧 **Parameter Passing**: Command-line support for secure addon URLs
+- 🌐 **Built-in Web Interface**: Monitor and control via integrated web UI
+- 📊 **Comprehensive Logging**: Detailed logging with real-time progress tracking
+- 🔄 **Cross-Platform**: Windows, macOS, and Linux desktop apps
+- 💾 **Persistent Caching**: 30-day logo cache with automatic cleanup
 
 ## Installation
+
+### Desktop Application (Recommended)
 
 1. **Clone the repository**:
    ```bash
    git clone <repository-url>
-   cd stremio-emby-playlist
+   cd stremio-debridio-emby-resolver
    ```
 
 2. **Install dependencies**:
@@ -26,14 +30,38 @@ A Node.js/Express application that automatically generates M3U playlists from St
    npm install
    ```
 
-3. **Configure the application**:
-   - Edit `config.json` to match your preferences (see Configuration section below)
-   - For secure addon URLs, copy `config.secure.json.template` to `config.secure.json` and add your secure addon URLs
-
-4. **Start the application**:
+3. **Run the desktop app**:
    ```bash
-   npm start
+   npm run electron
    ```
+
+4. **With secure addon URL parameter**:
+   ```bash
+   npm run electron -- --secure-addons-url="https://your-debridio-url.com/manifest.json"
+   ```
+
+### Production Builds
+
+Build standalone desktop applications:
+
+```bash
+# Windows installer
+npm run build-win
+
+# macOS DMG
+npm run build-mac
+
+# Linux AppImage
+npm run build-linux
+```
+
+### Server Mode (Legacy)
+
+For server-only operation without desktop interface:
+
+```bash
+npm start
+```
 
 ## Configuration
 
@@ -47,12 +75,12 @@ The application is configured via the `config.json` file:
   },
   "stremio": {
     "apiUrl": "http://127.0.0.1:11470",
-    "userAgent": "Stremio/4.4.0",
+    "userAgent": "DebridioEmbyResolver/1.0.0",
     "timeout": 10000
   },
   "playlist": {
     "outputPath": "./playlist.m3u",
-    "name": "Stremio Playlist",
+    "name": "Debridio Emby Playlist",
     "refreshInterval": "0 0 * * * *",
     "maxRetries": 3,
     "retryDelay": 5000
@@ -88,8 +116,8 @@ The application is configured via the `config.json` file:
 - `port`: Port number for the web server (default: 3000)
 - `host`: Host address to bind to (default: localhost)
 
-#### Stremio Settings
-- `apiUrl`: Stremio API endpoint (default: http://127.0.0.1:11470)
+#### Addon Settings
+- `apiUrl`: Local addon API endpoint (default: http://127.0.0.1:11470)
 - `userAgent`: User agent string for API requests
 - `timeout`: Request timeout in milliseconds
 
@@ -107,13 +135,13 @@ The application is configured via the `config.json` file:
 - `logFile`: Path to log file
 
 #### Source Settings
-- `enabledAddons`: List of Stremio addons to fetch content from (supports both built-in addon IDs and full addon URLs)
+- `enabledAddons`: List of streaming addons to fetch content from (supports both built-in addon IDs and full addon URLs)
 - `categories`: Content categories to include (movie, series)
 - `filters`: Content filtering options (year range, genres, languages)
 
 ### Adding Custom Addons
 
-You can add custom Stremio addons by including their full manifest URLs in the `enabledAddons` array:
+You can add custom streaming addons by including their full manifest URLs in the `enabledAddons` array:
 
 ```json
 {
@@ -121,7 +149,7 @@ You can add custom Stremio addons by including their full manifest URLs in the `
     "enabledAddons": [
       "com.linvo.cinemeta",
       "com.stremio.local",
-      "https://tv-addon.debridio.com/YOUR-API-KEY-HERE/manifest.json"
+      "https://debridio.com/YOUR-API-KEY-HERE/manifest.json"
     ]
   }
 }
@@ -213,6 +241,32 @@ Returns detailed server and playlist status information.
 
 ## Usage
 
+### Desktop Application
+
+1. **Launch the desktop app**:
+   ```bash
+   npm run electron
+   ```
+
+2. **With secure addon URL**:
+   ```bash
+   npm run electron -- --secure-addons-url="https://your-debridio-url.com/manifest.json"
+   ```
+
+3. **Windows shortcut with parameters**:
+   Use the provided `launch-with-secure-addon.bat` file or create a shortcut with target:
+   ```
+   "C:\path\to\node.exe" "C:\path\to\index.js" --secure-addons-url="https://your-url.com/manifest.json"
+   ```
+
+4. **Access features**:
+   - **System tray**: Right-click for quick access to controls
+   - **Web interface**: Built-in browser interface for monitoring
+   - **Playlist file**: Generated at `./playlist.m3u`
+   - **Logo cache**: High-quality logos cached in `./cache/logos/`
+
+### Server Mode
+
 1. **Start the server**:
    ```bash
    npm start
@@ -247,7 +301,7 @@ npm start
 #### Windows (using PM2)
 ```cmd
 npm install -g pm2
-pm2 start index.js --name stremio-playlist
+pm2 start index.js --name debridio-emby-resolver
 pm2 startup
 pm2 save
 ```
@@ -255,7 +309,7 @@ pm2 save
 #### Linux/macOS (using PM2)
 ```bash
 npm install -g pm2
-pm2 start index.js --name stremio-playlist
+pm2 start index.js --name debridio-emby-resolver
 pm2 startup
 pm2 save
 ```
@@ -271,31 +325,42 @@ This uses nodemon for automatic restarts when files change.
 
 ### Project Structure
 ```
-stremio-emby-playlist/
-├── index.js                 # Main application entry point
-├── config.json             # Configuration file
-├── package.json            # Node.js dependencies and scripts
-├── .gitignore              # Git ignore rules
-├── README.md               # This file
+stremio-debridio-emby-resolver/
+├── index.js                      # Main application entry point
+├── electron-main.js              # Electron desktop app main process
+├── config.json                   # Configuration file
+├── config.secure.json.template   # Secure configuration template
+├── package.json                  # Node.js dependencies and scripts
+├── launch-with-secure-addon.bat  # Windows launcher with parameters
+├── DESKTOP_APP_GUIDE.md          # Desktop app documentation
+├── public/
+│   └── index.html                # Built-in web interface
 ├── src/
 │   ├── messages/
-│   │   └── index.js        # Centralized message constants
+│   │   └── index.js              # Centralized message constants
 │   ├── services/
-│   │   ├── stremioService.js    # Stremio API integration
-│   │   └── playlistGenerator.js # M3U playlist generation
+│   │   ├── stremioService.js     # Addon API integration
+│   │   ├── playlistGenerator.js  # M3U playlist generation
+│   │   └── logoService.js        # Logo downloading and caching
+│   ├── channels/
+│   │   ├── fallback.js           # Fallback channel definitions
+│   │   └── variations.js         # Channel name variations
 │   └── utils/
-│       └── logger.js       # Logging utility
-└── logs/                   # Log files (if file logging enabled)
+│       └── logger.js             # Logging utility
+├── cache/
+│   └── logos/                    # Downloaded logo files and metadata
+├── backups/                      # Playlist backups
+└── logs/                         # Log files (if file logging enabled)
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Stremio Connection Failed**
-   - Ensure Stremio is running on your system
-   - Verify the `apiUrl` in config.json points to the correct Stremio instance
-   - Default Stremio URL is `http://127.0.0.1:11470`
+1. **Addon Connection Failed**
+   - Verify addon URLs are correct and accessible
+   - Check network connectivity
+   - Ensure secure addon URLs are properly formatted
 
 2. **Playlist Not Updating**
    - Check the cron expression in `refreshInterval`
@@ -309,6 +374,17 @@ stremio-emby-playlist/
 4. **Port Already in Use**
    - Change the `port` setting in config.json
    - Kill any existing processes using the port
+   - For desktop app, the web interface runs on a different port
+
+5. **Logo Enhancement Issues**
+   - Check internet connectivity for Wikimedia access
+   - Verify cache directory permissions
+   - Clear cache with `rm -rf cache/logos/*` if needed
+
+6. **Desktop App Issues**
+   - Ensure Electron dependencies are installed: `npm install`
+   - Check system requirements for Electron
+   - Try running in server mode first: `npm start`
 
 ### Logs
 Check the console output or log files (if enabled) for detailed error information.

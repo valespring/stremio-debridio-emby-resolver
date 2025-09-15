@@ -1,6 +1,6 @@
 const MESSAGES = {
   SERVER: {
-    INITIALIZED: 'Stremio Playlist Server initialized successfully',
+    INITIALIZED: 'Debridio Emby Resolver Server initialized successfully',
     STARTING: (host, port) => `Server running on http://${host}:${port}`,
     PLAYLIST_URL: (host, port) => `Playlist available at: http://${host}:${port}/playlist`,
     STATUS_URL: (host, port) => `Status endpoint: http://${host}:${port}/status`,
@@ -22,7 +22,14 @@ const MESSAGES = {
     SCHEDULED_REFRESH_STARTED: 'Scheduled playlist refresh started',
     UPDATE_SUCCESS: 'Playlist updated successfully',
     UPDATE_FAILED: 'Failed to update playlist',
-    NOT_FOUND: 'Playlist not found'
+    NOT_FOUND: 'Playlist not found',
+    LOGO_ENHANCEMENT_STARTED: 'Starting background logo enhancement with Wikimedia search...',
+    LOGO_ENHANCEMENT_COMPLETED: (count) => `Background logo enhancement completed: ${count} logos improved`,
+    LOGO_ENHANCEMENT_NO_UPDATES: 'Background logo enhancement completed: no logos needed enhancement',
+    LOGO_ENHANCEMENT_FAILED: 'Background logo enhancement failed:',
+    LOGO_ENHANCED: (title) => `Enhanced logo for ${title}`,
+    LOGO_ENHANCEMENT_REGENERATING: (count) => `Enhanced ${count} logos, updating playlist...`,
+    LOGO_ENHANCEMENT_REGENERATE_FAILED: 'Failed to regenerate playlist after logo enhancement:'
   },
   SCHEDULER: {
     SETUP: (interval) => `Scheduler setup with interval: ${interval}`
@@ -37,16 +44,16 @@ const MESSAGES = {
     MANUAL_FAILED: 'Manual refresh failed:'
   },
   STREMIO: {
-    FETCH_STARTED: 'Starting content fetch from Stremio',
+    FETCH_STARTED: 'Starting content fetch from addons',
     FETCH_ADDON: (addonId) => `Fetching content from addon: ${addonId}`,
     FETCH_FAILED: (category, addonId) => `Failed to fetch ${category} content from ${addonId}:`,
-    FETCH_COMPLETED: (count) => `Fetched ${count} content items from Stremio`,
-    FETCH_ERROR: 'Failed to fetch content from Stremio:',
+    FETCH_COMPLETED: (count) => `Fetched ${count} content items from addons`,
+    FETCH_ERROR: 'Failed to fetch content from addons:',
     ADDON_ERROR: (addonId, category) => `Error fetching content from ${addonId} for ${category}:`,
     FILTERED_CONTENT: (count) => `Filtered content: ${count} items remaining`,
-    CONNECTION_TEST: 'Testing Stremio connection...',
-    CONNECTION_SUCCESS: 'Stremio connection test successful',
-    CONNECTION_FAILED: 'Stremio connection test failed:',
+    CONNECTION_TEST: 'Testing addon connection...',
+    CONNECTION_SUCCESS: 'Addon connection test successful',
+    CONNECTION_FAILED: 'Addon connection test failed:',
     ADDON_URL_DETECTED: (addonId) => `Detected addon URL: ${addonId}`,
     ADDON_MANIFEST_FETCH: (manifestUrl) => `Fetching addon manifest from: ${manifestUrl}`,
     ADDON_MANIFEST_SUCCESS: (addonName) => `Successfully loaded addon: ${addonName}`,
@@ -89,7 +96,13 @@ const MESSAGES = {
     CACHE_EXPIRED: (cacheKey) => `Cache expired for ${cacheKey}`,
     CACHE_SAVED: (cacheKey, source) => `Cached logo for ${cacheKey} from ${source}`,
     CACHE_CLEANUP: (count) => `Cleaned up ${count} expired logo cache entries`,
-    CACHE_STATS: (memorySize, persistentSize) => `Cache stats - Memory: ${memorySize}, Persistent: ${persistentSize}`
+    CACHE_STATS: (memorySize, persistentSize) => `Cache stats - Memory: ${memorySize}, Persistent: ${persistentSize}`,
+    DOWNLOAD_STARTED: (url, filename) => `Downloading logo file: ${filename} from ${url}`,
+    DOWNLOAD_SUCCESS: (filename, size) => `Successfully downloaded logo: ${filename} (${size} bytes)`,
+    DOWNLOAD_FAILED: (url, error) => `Failed to download logo from ${url}: ${error}`,
+    FILE_CACHED: (cacheKey, filename) => `Logo file cached for ${cacheKey}: ${filename}`,
+    FILE_MISSING: (cacheKey, filename) => `Cached logo file missing for ${cacheKey}: ${filename}`,
+    FILE_CLEANUP: (filename) => `Removed cached logo file: ${filename}`
   },
   DEBRIDIO: {
     SEQUENTIAL_FETCH_START: 'Attempting sequential fetch of real Debridio channels...',
@@ -130,8 +143,8 @@ const MESSAGES = {
   },
 
   GENERAL: {
-    SETTINGS_ERROR: (error) => `Error processing Stremio settings: ${error}`,
-    ADDONS_ERROR: (error) => `Error processing Stremio addons: ${error}`,
+    SETTINGS_ERROR: (error) => `Error processing addon settings: ${error}`,
+    ADDONS_ERROR: (error) => `Error processing addons: ${error}`,
     ENDPOINT_ACCESS_FAILED: (endpoint, error) => `Failed to access ${endpoint}: ${error}`,
     DEBUG_RESPONSE: (data) => `Response: ${JSON.stringify(data, null, 2)}`,
     STREAMS_FETCH_DEBUG: (channelName) => `Fetching streams for channel: ${channelName}`

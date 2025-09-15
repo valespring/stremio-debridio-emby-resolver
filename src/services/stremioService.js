@@ -190,7 +190,7 @@ class StremioService {
           title: `${channel} Live Stream`,
           availability: true
         }],
-        poster: await this.logoService.getChannelLogo(channel.replace('_', ' ')),
+        poster: this.logoService.generatePlaceholderLogo(channel.replace('_', ' ')),
         description: `Live ${channel.replace('_', ' ')} channel from Debridio`,
         imdbRating: '0.0',
         duration: null
@@ -368,7 +368,7 @@ class StremioService {
         language: 'en',
         addon: 'Debridio - TV',
         streams: validStreams,
-        poster: meta.poster || await this.logoService.getChannelLogo(channelName, meta.poster),
+        poster: meta.poster || this.logoService.generatePlaceholderLogo(channelName),
         description: `Live ${channelName} channel from Debridio`,
         imdbRating: '0.0',
         duration: null
@@ -429,7 +429,7 @@ class StremioService {
         language: 'en',
         addon: 'Debridio - TV',
         streams: validStreams,
-        poster: meta.poster || await this.logoService.getChannelLogo(channelName, meta.poster),
+        poster: meta.poster || this.logoService.generatePlaceholderLogo(channelName),
         description: `Live ${channelName} channel from Debridio`,
         imdbRating: '0.0',
         duration: null

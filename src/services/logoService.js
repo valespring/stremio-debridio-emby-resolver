@@ -48,6 +48,9 @@ class LogoService {
   async getChannelLogo(channelName, debridioLogo = null) {
     const cacheKey = channelName.toLowerCase();
     
+    // Ensure cache is initialized
+    await this.ensureCacheInitialized();
+    
     // Check in-memory cache first
     if (this.logoCache.has(cacheKey)) {
       this.logger.debug(MESSAGES.LOGO_SERVICE.CACHE_HIT(channelName));
@@ -69,10 +72,12 @@ class LogoService {
       let logoSource = 'placeholder';
 
       // 1. Try Wikimedia first (highest priority)
+      this.logger.debug(`Searching Wikimedia for logo: ${channelName}`);
       const wikimediaLogo = await this.searchWikimediaLogo(channelName);
       if (wikimediaLogo) {
         logoUrl = wikimediaLogo;
         logoSource = 'wikimedia';
+        this.logger.info(`Found Wikimedia logo for ${channelName}: ${wikimediaLogo}`);
       }
       // 2. Use Debridio logo if available (medium priority)
       else if (debridioLogo) {
@@ -87,19 +92,25 @@ class LogoService {
         this.logger.debug(MESSAGES.LOGO_SERVICE.PLACEHOLDER_FALLBACK(channelName));
       }
 
-      // Cache the result
-      await this.cacheLogo(cacheKey, logoUrl, logoSource);
-      this.logoCache.set(cacheKey, logoUrl);
-      return logoUrl;
+      // Cache the result (download file if it's a remote URL)
+      const cachedLogoPath = await this.cacheLogo(cacheKey, logoUrl, logoSource);
+      this.logoCache.set(cacheKey, cachedLogoPath || logoUrl);
+      return cachedLogoPath || logoUrl;
 
     } catch (error) {
       this.logger.warn(MESSAGES.LOGO_SERVICE.SERVICE_ERROR(channelName, error.message));
       
       // Fallback to placeholder on error
       const placeholderLogo = this.generatePlaceholderLogo(channelName);
-      await this.cacheLogo(cacheKey, placeholderLogo, 'placeholder');
-      this.logoCache.set(cacheKey, placeholderLogo);
-      return placeholderLogo;
+      const cachedPlaceholder = await this.cacheLogo(cacheKey, placeholderLogo, 'placeholder');
+      this.logoCache.set(cacheKey, cachedPlaceholder || placeholderLogo);
+      return cachedPlaceholder || placeholderLogo;
+    }
+  }
+
+  async ensureCacheInitialized() {
+    if (!this.cacheInitialized) {
+      await this.initializeCache();
     }
   }
 
@@ -118,16 +129,20 @@ class LogoService {
         return null;
       }
 
-      // For external URLs, just return the URL (no need to store file)
-      if (metadata.source === 'wikimedia' || metadata.source === 'debridio') {
-        return metadata.url;
+      // Check if local file exists
+      if (metadata.localPath) {
+        const localFilePath = path.join(this.cacheDir, metadata.localPath);
+        if (await fs.pathExists(localFilePath)) {
+          return localFilePath;
+        } else {
+          // File was deleted, remove from cache
+          this.logger.debug(`Cached file missing for ${cacheKey}, removing from cache`);
+          await this.removeCachedLogo(cacheKey);
+          return null;
+        }
       }
 
-      // For placeholder, regenerate (they're dynamic)
-      if (metadata.source === 'placeholder') {
-        return metadata.url;
-      }
-
+      // Fallback to URL if no local file
       return metadata.url;
     } catch (error) {
       this.logger.debug(`Failed to get cached logo for ${cacheKey}: ${error.message}`);
@@ -137,8 +152,27 @@ class LogoService {
 
   async cacheLogo(cacheKey, logoUrl, source) {
     try {
+      let localPath = null;
+      let finalUrl = logoUrl;
+
+      // Download and store file locally for remote URLs
+      if (source === 'wikimedia' || source === 'debridio') {
+        try {
+          const downloadResult = await this.downloadLogoFile(logoUrl, cacheKey);
+          if (downloadResult) {
+            localPath = downloadResult.filename;
+            finalUrl = downloadResult.fullPath;
+            this.logger.debug(`Downloaded logo file for ${cacheKey}: ${localPath}`);
+          }
+        } catch (downloadError) {
+          this.logger.debug(`Failed to download logo for ${cacheKey}: ${downloadError.message}`);
+          // Continue with URL fallback
+        }
+      }
+
       const metadata = {
         url: logoUrl,
+        localPath: localPath,
         source: source,
         timestamp: Date.now()
       };
@@ -148,14 +182,31 @@ class LogoService {
       // Save metadata to file
       await this.saveCacheMetadata();
       
-      this.logger.debug(`Cached logo for ${cacheKey} from ${source}`);
+      this.logger.debug(`Cached logo for ${cacheKey} from ${source}${localPath ? ' (downloaded)' : ' (URL only)'}`);
+      
+      // Return the local path if available, otherwise the original URL
+      return finalUrl;
     } catch (error) {
       this.logger.debug(`Failed to cache logo for ${cacheKey}: ${error.message}`);
+      return null;
     }
   }
 
   async removeCachedLogo(cacheKey) {
     try {
+      const metadata = this.cacheMetadata.get(cacheKey);
+      
+      // Remove local file if it exists
+      if (metadata?.localPath) {
+        const localFilePath = path.join(this.cacheDir, metadata.localPath);
+        try {
+          await fs.remove(localFilePath);
+          this.logger.debug(`Removed cached file: ${metadata.localPath}`);
+        } catch (fileError) {
+          this.logger.debug(`Failed to remove cached file ${metadata.localPath}: ${fileError.message}`);
+        }
+      }
+      
       this.cacheMetadata.delete(cacheKey);
       await this.saveCacheMetadata();
     } catch (error) {
@@ -350,6 +401,70 @@ class LogoService {
       size: this.logoCache.size,
       entries: Array.from(this.logoCache.keys())
     };
+  }
+
+  async downloadLogoFile(url, cacheKey) {
+    try {
+      // Get file extension from URL
+      const urlPath = new URL(url).pathname;
+      const extension = path.extname(urlPath) || '.png';
+      
+      // Generate safe filename
+      const safeKey = cacheKey.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const filename = `${safeKey}${extension}`;
+      const fullPath = path.join(this.cacheDir, filename);
+
+      // Download the file
+      const response = await this.httpClient.get(url, {
+        responseType: 'stream',
+        timeout: 10000 // 10 second timeout for downloads
+      });
+
+      // Create write stream and pipe the response
+      const writer = fs.createWriteStream(fullPath);
+      response.data.pipe(writer);
+
+      // Wait for download to complete
+      await new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+      });
+
+      // Verify file was created and has content
+      const stats = await fs.stat(fullPath);
+      if (stats.size === 0) {
+        await fs.remove(fullPath);
+        throw new Error('Downloaded file is empty');
+      }
+
+      this.logger.debug(`Successfully downloaded logo: ${filename} (${stats.size} bytes)`);
+      
+      return {
+        filename: filename,
+        fullPath: fullPath,
+        size: stats.size
+      };
+
+    } catch (error) {
+      this.logger.debug(`Failed to download logo from ${url}: ${error.message}`);
+      return null;
+    }
+  }
+
+  async cleanupExpiredFiles() {
+    try {
+      const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days
+      const now = Date.now();
+      
+      for (const [cacheKey, metadata] of this.cacheMetadata.entries()) {
+        if (now - metadata.timestamp > maxAge) {
+          await this.removeCachedLogo(cacheKey);
+          this.logger.debug(`Cleaned up expired cache entry: ${cacheKey}`);
+        }
+      }
+    } catch (error) {
+      this.logger.debug(`Failed to cleanup expired files: ${error.message}`);
+    }
   }
 }
 

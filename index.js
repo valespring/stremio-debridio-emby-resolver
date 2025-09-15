@@ -195,22 +195,98 @@ class StremioPlaylistServer {
     try {
       this.logger.info(MESSAGES.PLAYLIST.GENERATION_STARTED);
       
-      // Fetch content from Stremio
+      // Fetch content from Stremio (now uses Debridio logos or placeholders - fast!)
       const content = await this.stremioService.fetchContent(this.config.sources);
       
-      // Generate M3U playlist
+      // Generate M3U playlist immediately
       await this.playlistGenerator.generate(content);
       
       this.lastUpdate = new Date().toISOString();
       const duration = Date.now() - startTime;
       
       this.logger.info(MESSAGES.PLAYLIST.GENERATION_COMPLETED(duration));
+      
+      // Start background logo enhancement (don't await - run in background)
+      this.enhanceLogosInBackground(content);
+      
     } catch (error) {
       this.logger.error(MESSAGES.PLAYLIST.GENERATION_FAILED, error);
       throw error;
     } finally {
       this.isUpdating = false;
     }
+  }
+
+  enhanceLogosInBackground(content) {
+    // Run logo enhancement in background without blocking
+    setImmediate(async () => {
+      try {
+        this.logger.info(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_STARTED);
+        this.logger.info(`Processing ${content.length} items for logo enhancement`);
+        let logosEnhanced = 0;
+        let processed = 0;
+        
+        // Process items in batches to avoid overwhelming the API
+        const batchSize = 3;
+        const totalBatches = Math.ceil(content.length / batchSize);
+        
+        for (let i = 0; i < content.length; i += batchSize) {
+          const batch = content.slice(i, i + batchSize);
+          const batchNum = Math.floor(i / batchSize) + 1;
+          
+          this.logger.info(`Processing batch ${batchNum}/${totalBatches} (items ${i + 1}-${Math.min(i + batchSize, content.length)})`);
+          
+          await Promise.all(batch.map(async (item) => {
+            try {
+              const originalPoster = item.poster;
+              processed++;
+              
+              this.logger.debug(`[${processed}/${content.length}] Checking "${item.title}" (poster: ${originalPoster ? 'has poster' : 'no poster'})`);
+              
+              // Always try to enhance - even if we have a Debridio poster, Wikimedia might be better
+              const enhancedPoster = await this.stremioService.logoService.getChannelLogo(item.title, originalPoster);
+              
+              // Only update if we got a different/better logo
+              if (enhancedPoster !== originalPoster) {
+                item.poster = enhancedPoster;
+                logosEnhanced++;
+                this.logger.info(`✓ Enhanced "${item.title}": ${originalPoster || 'none'} -> ${enhancedPoster}`);
+              } else {
+                this.logger.debug(`- No enhancement needed for "${item.title}"`);
+              }
+            } catch (error) {
+              this.logger.warn(`Failed to enhance logo for "${item.title}": ${error.message}`);
+            }
+          }));
+          
+          // Small delay between batches to be nice to APIs
+          if (i + batchSize < content.length) {
+            this.logger.debug(`Waiting 1 second before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+        
+        this.logger.info(`Logo enhancement processing completed: ${processed} items processed, ${logosEnhanced} logos enhanced`);
+        
+        // Always regenerate the playlist to ensure any changes are saved
+        if (logosEnhanced > 0) {
+          this.logger.info(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_REGENERATING(logosEnhanced));
+          
+          try {
+            await this.playlistGenerator.generate(content);
+            this.lastUpdate = new Date().toISOString();
+            this.logger.info(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_COMPLETED(logosEnhanced));
+          } catch (error) {
+            this.logger.warn(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_REGENERATE_FAILED, error.message);
+          }
+        } else {
+          this.logger.info(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_NO_UPDATES);
+        }
+        
+      } catch (error) {
+        this.logger.warn(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_FAILED, error.message);
+      }
+    });
   }
 
   async start() {
