@@ -40,6 +40,20 @@
       "**/*",
       "!dist/**/*"
     ],
+    "asarUnpack": [
+      "config.json",
+      "config.secure.json.template"
+    ],
+    "extraResources": [
+      {
+        "from": "config.json",
+        "to": "config.json"
+      },
+      {
+        "from": "config.secure.json.template",
+        "to": "config.secure.json.template"
+      }
+    ],
     "mac": {
       "category": "public.app-category.utilities",
       "target": [

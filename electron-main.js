@@ -19,7 +19,15 @@ class ElectronApp {
   }
 
   loadPortFromConfig() {
-    const configPath = path.join(__dirname, 'config.json');
+    // In development, config is in __dirname
+    // In production, config is in resources directory
+    let configPath = path.join(__dirname, 'config.json');
+    
+    // Check if we're in a packaged app
+    if (process.resourcesPath) {
+      configPath = path.join(process.resourcesPath, 'config.json');
+    }
+    
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData);
     return config.server.port;

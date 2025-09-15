@@ -52,13 +52,21 @@ class StremioPlaylistServer {
 
   async loadConfig() {
     try {
+      // Determine config path - in packaged app, look in resources directory
+      let configPath = path.join(__dirname, 'config.json');
+      let secureConfigPath = path.join(__dirname, 'config.secure.json');
+      
+      // Check if we're in a packaged app (when running via electron)
+      if (process.resourcesPath) {
+        configPath = path.join(process.resourcesPath, 'config.json');
+        secureConfigPath = path.join(process.resourcesPath, 'config.secure.json');
+      }
+      
       // Load main config
-      const configPath = path.join(__dirname, 'config.json');
       const configData = await fs.readFile(configPath, 'utf8');
       this.config = JSON.parse(configData);
       
       // Load secure config if it exists
-      const secureConfigPath = path.join(__dirname, 'config.secure.json');
       if (await fs.pathExists(secureConfigPath)) {
         const secureConfigData = await fs.readFile(secureConfigPath, 'utf8');
         const secureConfig = JSON.parse(secureConfigData);
