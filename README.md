@@ -243,27 +243,79 @@ Returns detailed server and playlist status information.
 
 ### Desktop Application
 
-1. **Launch the desktop app**:
-   ```bash
-   npm run electron
-   ```
+#### Basic Launch
+Launch the desktop app without any additional configuration:
+```bash
+npm run electron
+```
 
-2. **With secure addon URL**:
-   ```bash
-   npm run electron -- --secure-addons-url="https://your-debridio-url.com/manifest.json"
-   ```
+#### Running with Secure Addons Configuration
 
-3. **Windows shortcut with parameters**:
-   Use the provided `launch-with-secure-addon.bat` file or create a shortcut with target:
-   ```
-   "C:\path\to\node.exe" "C:\path\to\index.js" --secure-addons-url="https://your-url.com/manifest.json"
-   ```
+The electron app supports passing secure addon URLs directly via command line parameters, which is useful for:
+- Testing with different addon configurations
+- Running with sensitive URLs containing API keys
+- Automated deployment scenarios
+- Development and debugging
 
-4. **Access features**:
-   - **System tray**: Right-click for quick access to controls
-   - **Web interface**: Built-in browser interface for monitoring
-   - **Playlist file**: Generated at `./playlist.m3u`
-   - **Logo cache**: High-quality logos cached in `./cache/logos/`
+**Development Mode:**
+```bash
+# Single secure addon URL
+npm run electron -- --secure-addons-url="https://your-debridio-url.com/manifest.json"
+
+# Alternative format with equals sign
+npm run electron -- --secure-addons-url=https://your-debridio-url.com/manifest.json
+
+# Development mode with secure addon
+npm run electron-dev -- --secure-addons-url="https://your-debridio-url.com/manifest.json"
+```
+
+**Production Builds:**
+After building the application (`npm run build-win`, `npm run build-mac`, or `npm run build-linux`), you can run the executable with the same parameters:
+
+```bash
+# Windows
+"Stremio Debridio Emby Resolver.exe" --secure-addons-url="https://your-url.com/manifest.json"
+
+# macOS
+./Stremio\ Debridio\ Emby\ Resolver.app/Contents/MacOS/Stremio\ Debridio\ Emby\ Resolver --secure-addons-url="https://your-url.com/manifest.json"
+
+# Linux
+./stremio-debridio-emby-resolver --secure-addons-url="https://your-url.com/manifest.json"
+```
+
+**Windows Batch File:**
+Use the provided [`launch-with-secure-addon.bat`](launch-with-secure-addon.bat) file for easy Windows deployment:
+```cmd
+launch-with-secure-addon.bat "https://your-secure-addon-url.com/manifest.json"
+```
+
+**How It Works:**
+- The `--secure-addons-url` parameter is parsed by the electron main process
+- The URL is automatically added to a temporary `config.secure.json` file
+- The secure addon is merged with regular addons at runtime
+- No sensitive URLs are stored in the main configuration file
+- The app works normally if no secure addon URL is provided
+
+**Desktop Shortcuts:**
+Create desktop shortcuts with embedded secure addon URLs:
+
+*Windows:*
+- Target: `"C:\path\to\Stremio Debridio Emby Resolver.exe" --secure-addons-url="https://your-url.com/manifest.json"`
+- Start in: `"C:\path\to\app\directory"`
+
+*macOS:*
+Create an Automator application or use Terminal command in a script
+
+*Linux:*
+Create a `.desktop` file with the appropriate Exec line including the parameter
+
+#### Application Features
+Once launched, access these features:
+- **System tray**: Right-click for quick access to controls (if tray icon is available)
+- **Web interface**: Built-in browser interface for monitoring and control
+- **Playlist file**: Generated M3U playlist at `./playlist.m3u`
+- **Logo cache**: High-quality logos cached in `./cache/logos/`
+- **Real-time updates**: Live status and progress monitoring
 
 ### Server Mode
 
