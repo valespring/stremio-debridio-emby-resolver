@@ -21,6 +21,9 @@
     "enableFile": false,
     "logFile": "./logs/app.log"
   },
+  "logos": {
+    "enableWikimedia": false
+  },
   "sources": {
     "enabledAddons": [
       "com.linvo.cinemeta",

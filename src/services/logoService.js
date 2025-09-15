@@ -10,6 +10,10 @@ class LogoService {
   constructor(logger, config = null) {
     this.logger = logger;
     this.logoCache = new Map();
+    this.config = config;
+    
+    // Check if Wikimedia logo fetching is enabled
+    this.wikimediaEnabled = config?.logos?.enableWikimedia || false;
     
     // Use a writable cache directory - in packaged app, use resources directory
     if (process.resourcesPath) {
@@ -78,22 +82,26 @@ class LogoService {
       let logoUrl = null;
       let logoSource = 'placeholder';
 
-      // 1. Try Wikimedia first (highest priority)
-      this.logger.debug(`Searching Wikimedia for logo: ${channelName}`);
-      const wikimediaLogo = await this.searchWikimediaLogo(channelName);
-      if (wikimediaLogo) {
-        logoUrl = wikimediaLogo;
-        logoSource = 'wikimedia';
-        this.logger.info(`Found Wikimedia logo for ${channelName}: ${wikimediaLogo}`);
+      // 1. Try Wikimedia first (only if enabled)
+      if (this.wikimediaEnabled) {
+        this.logger.debug(`Searching Wikimedia for logo: ${channelName}`);
+        const wikimediaLogo = await this.searchWikimediaLogo(channelName);
+        if (wikimediaLogo) {
+          logoUrl = wikimediaLogo;
+          logoSource = 'wikimedia';
+          this.logger.info(`Found Wikimedia logo for ${channelName}: ${wikimediaLogo}`);
+        }
       }
-      // 2. Use Debridio logo if available (medium priority)
-      else if (debridioLogo) {
+      
+      // 2. Use Debridio logo if available and no Wikimedia logo found
+      if (!logoUrl && debridioLogo) {
         this.logger.debug(MESSAGES.LOGO_SERVICE.DEBRIDIO_FALLBACK(channelName));
         logoUrl = debridioLogo;
         logoSource = 'debridio';
       }
+      
       // 3. Generate placeholder (lowest priority)
-      else {
+      if (!logoUrl) {
         logoUrl = this.generatePlaceholderLogo(channelName);
         logoSource = 'placeholder';
         this.logger.debug(MESSAGES.LOGO_SERVICE.PLACEHOLDER_FALLBACK(channelName));

@@ -24,6 +24,7 @@ const MESSAGES = {
     UPDATE_FAILED: 'Failed to update playlist',
     NOT_FOUND: 'Playlist not found',
     LOGO_ENHANCEMENT_STARTED: 'Starting background logo enhancement with Wikimedia search...',
+    LOGO_ENHANCEMENT_SKIPPED: 'Logo enhancement skipped - Wikimedia disabled in config',
     LOGO_ENHANCEMENT_COMPLETED: (count) => `Background logo enhancement completed: ${count} logos improved`,
     LOGO_ENHANCEMENT_NO_UPDATES: 'Background logo enhancement completed: no logos needed enhancement',
     LOGO_ENHANCEMENT_FAILED: 'Background logo enhancement failed:',

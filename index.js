@@ -213,18 +213,27 @@ class StremioPlaylistServer {
       
       this.logger.info(MESSAGES.PLAYLIST.GENERATION_COMPLETED(duration));
       
+      // Mark as no longer updating BEFORE starting background enhancement
+      this.isUpdating = false;
+      
       // Start background logo enhancement (don't await - run in background)
+      // This runs AFTER the playlist is completely generated and saved
       this.enhanceLogosInBackground(content);
       
     } catch (error) {
       this.logger.error(MESSAGES.PLAYLIST.GENERATION_FAILED, error);
+      this.isUpdating = false; // Make sure to reset on error
       throw error;
-    } finally {
-      this.isUpdating = false;
     }
   }
 
   enhanceLogosInBackground(content) {
+    // Only run logo enhancement if Wikimedia is enabled
+    if (!this.config.logos?.enableWikimedia) {
+      this.logger.info(MESSAGES.PLAYLIST.LOGO_ENHANCEMENT_SKIPPED);
+      return;
+    }
+
     // Run logo enhancement in background without blocking
     setImmediate(async () => {
       try {
@@ -250,7 +259,7 @@ class StremioPlaylistServer {
               
               this.logger.debug(`[${processed}/${content.length}] Checking "${item.title}" (poster: ${originalPoster ? 'has poster' : 'no poster'})`);
               
-              // Always try to enhance - even if we have a Debridio poster, Wikimedia might be better
+              // Try to enhance with Wikimedia logos
               const enhancedPoster = await this.stremioService.logoService.getChannelLogo(item.title, originalPoster);
               
               // Only update if we got a different/better logo
