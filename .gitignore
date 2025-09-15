@@ -126,3 +126,6 @@ playlist.m3u*
 logs/
 backups/
 config.secure.json
+
+# Cache directories
+cache/

@@ -1,0 +1,245 @@
+const { app, BrowserWindow, Menu, Tray, dialog, shell } = require('electron');
+const path = require('path');
+const StremioPlaylistServer = require('./index');
+
+class ElectronApp {
+  constructor() {
+    this.mainWindow = null;
+    this.tray = null;
+    this.server = null;
+    this.serverPort = 3000;
+    this.secureAddonsUrl = null;
+    
+    // Parse command line arguments for secureAddons URL
+    this.parseCommandLineArgs();
+    
+    // Set up app event handlers
+    this.setupAppHandlers();
+  }
+
+  parseCommandLineArgs() {
+    const args = process.argv.slice(2);
+    
+    // Look for --secure-addons-url parameter
+    const secureAddonsIndex = args.findIndex(arg => 
+      arg === '--secure-addons-url' || arg.startsWith('--secure-addons-url=')
+    );
+    
+    if (secureAddonsIndex !== -1) {
+      if (args[secureAddonsIndex].includes('=')) {
+        // Format: --secure-addons-url=https://example.com
+        this.secureAddonsUrl = args[secureAddonsIndex].split('=')[1];
+      } else if (args[secureAddonsIndex + 1]) {
+        // Format: --secure-addons-url https://example.com
+        this.secureAddonsUrl = args[secureAddonsIndex + 1];
+      }
+    }
+
+    console.log('Parsed secure addons URL:', this.secureAddonsUrl);
+  }
+
+  setupAppHandlers() {
+    app.whenReady().then(() => {
+      this.createWindow();
+      this.createTray();
+      this.startServer();
+    });
+
+    app.on('window-all-closed', () => {
+      // On macOS, keep app running even when all windows are closed
+      if (process.platform !== 'darwin') {
+        this.cleanup();
+        app.quit();
+      }
+    });
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        this.createWindow();
+      }
+    });
+
+    app.on('before-quit', () => {
+      this.cleanup();
+    });
+  }
+
+  createWindow() {
+    this.mainWindow = new BrowserWindow({
+      width: 1000,
+      height: 700,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        enableRemoteModule: false
+      },
+      // icon: path.join(__dirname, 'assets', 'icon.png'), // Add icon if available
+      title: 'Stremio Debridio Emby Resolver'
+    });
+
+    // Load the server's web interface
+    this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+
+    // Open external links in default browser
+    this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    });
+
+    // Hide window instead of closing on close button
+    this.mainWindow.on('close', (event) => {
+      if (!app.isQuiting) {
+        event.preventDefault();
+        this.mainWindow.hide();
+      }
+    });
+  }
+
+  createTray() {
+    // Create system tray icon - use a simple fallback if icon doesn't exist
+    const iconPath = path.join(__dirname, 'assets', 'tray-icon.png');
+    const fs = require('fs');
+    
+    // Skip tray creation if icon doesn't exist
+    if (!fs.existsSync(iconPath)) {
+      console.log('Tray icon not found, skipping tray creation');
+      return;
+    }
+    
+    this.tray = new Tray(iconPath);
+    
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Show App',
+        click: () => {
+          this.mainWindow.show();
+        }
+      },
+      {
+        label: 'Open Playlist URL',
+        click: () => {
+          shell.openExternal(`http://localhost:${this.serverPort}/playlist`);
+        }
+      },
+      {
+        label: 'Open Status Page',
+        click: () => {
+          shell.openExternal(`http://localhost:${this.serverPort}/status`);
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Refresh Playlist',
+        click: async () => {
+          try {
+            const response = await fetch(`http://localhost:${this.serverPort}/refresh`, {
+              method: 'POST'
+            });
+            const result = await response.json();
+            
+            dialog.showMessageBox(this.mainWindow, {
+              type: 'info',
+              title: 'Playlist Refresh',
+              message: result.message || 'Playlist refreshed successfully'
+            });
+          } catch (error) {
+            dialog.showErrorBox('Refresh Error', 'Failed to refresh playlist: ' + error.message);
+          }
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          app.isQuiting = true;
+          app.quit();
+        }
+      }
+    ]);
+
+    if (this.tray) {
+      this.tray.setContextMenu(contextMenu);
+      this.tray.setToolTip('Stremio Debridio Emby Resolver');
+      
+      // Show window on tray click
+      this.tray.on('click', () => {
+        this.mainWindow.show();
+      });
+    }
+  }
+
+  async startServer() {
+    try {
+      // If secureAddonsUrl is provided, inject it into the environment or config
+      if (this.secureAddonsUrl) {
+        process.env.SECURE_ADDONS_URL = this.secureAddonsUrl;
+        console.log('Set secure addons URL from command line:', this.secureAddonsUrl);
+      }
+
+      this.server = new StremioPlaylistServer();
+      
+      // Modify the server to use the secure addons URL if provided
+      if (this.secureAddonsUrl) {
+        await this.injectSecureAddonsUrl();
+      }
+      
+      await this.server.start();
+      
+      console.log('Server started successfully');
+      
+      // Show notification that server is ready
+      if (this.mainWindow) {
+        this.mainWindow.webContents.once('did-finish-load', () => {
+          setTimeout(() => {
+            this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+          }, 2000);
+        });
+      }
+      
+    } catch (error) {
+      console.error('Failed to start server:', error);
+      dialog.showErrorBox('Server Error', 'Failed to start the server: ' + error.message);
+    }
+  }
+
+  async injectSecureAddonsUrl() {
+    const fs = require('fs-extra');
+    const path = require('path');
+    
+    try {
+      // Create or update secure config with the provided URL
+      const secureConfigPath = path.join(__dirname, 'config.secure.json');
+      let secureConfig = {};
+      
+      if (await fs.pathExists(secureConfigPath)) {
+        const configData = await fs.readFile(secureConfigPath, 'utf8');
+        secureConfig = JSON.parse(configData);
+      }
+      
+      // Add the secure addons URL to the config
+      if (!secureConfig.secureAddons) {
+        secureConfig.secureAddons = [];
+      }
+      
+      // Add the URL if it's not already present
+      if (!secureConfig.secureAddons.includes(this.secureAddonsUrl)) {
+        secureConfig.secureAddons.push(this.secureAddonsUrl);
+      }
+      
+      await fs.writeFile(secureConfigPath, JSON.stringify(secureConfig, null, 2));
+      console.log('Updated secure config with provided URL');
+      
+    } catch (error) {
+      console.error('Failed to inject secure addons URL:', error);
+    }
+  }
+
+  cleanup() {
+    if (this.server) {
+      this.server.stop();
+    }
+  }
+}
+
+// Create and start the Electron app
+const electronApp = new ElectronApp();

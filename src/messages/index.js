@@ -84,7 +84,12 @@ const MESSAGES = {
     WIKIMEDIA_FAILED: (channelName, error) => `Wikimedia search failed for ${channelName}: ${error}`,
     WIKIMEDIA_QUERY_FAILED: (searchTerm, error) => `Wikimedia query failed for "${searchTerm}": ${error}`,
     WIKIMEDIA_FILE_FAILED: (fileName, error) => `Failed to get Wikimedia file URL for ${fileName}: ${error}`,
-    CACHE_CLEARED: 'Logo cache cleared'
+    CACHE_CLEARED: 'Logo cache cleared',
+    CACHE_INITIALIZED: (count) => `Logo cache initialized with ${count} entries`,
+    CACHE_EXPIRED: (cacheKey) => `Cache expired for ${cacheKey}`,
+    CACHE_SAVED: (cacheKey, source) => `Cached logo for ${cacheKey} from ${source}`,
+    CACHE_CLEANUP: (count) => `Cleaned up ${count} expired logo cache entries`,
+    CACHE_STATS: (memorySize, persistentSize) => `Cache stats - Memory: ${memorySize}, Persistent: ${persistentSize}`
   },
   DEBRIDIO: {
     SEQUENTIAL_FETCH_START: 'Attempting sequential fetch of real Debridio channels...',

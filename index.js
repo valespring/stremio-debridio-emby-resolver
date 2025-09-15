@@ -63,12 +63,14 @@ class StremioPlaylistServer {
         const secureConfigData = await fs.readFile(secureConfigPath, 'utf8');
         const secureConfig = JSON.parse(secureConfigData);
         
-        // Merge secure addons with regular addons
+        // Merge secure addons with regular addons and also keep them separate
         if (secureConfig.secureAddons && Array.isArray(secureConfig.secureAddons)) {
           this.config.sources.enabledAddons = [
             ...this.config.sources.enabledAddons,
             ...secureConfig.secureAddons
           ];
+          // Also keep them in secureAddons for the service to find
+          this.config.secureAddons = secureConfig.secureAddons;
         }
         
         this.logger?.info(MESSAGES.CONFIG.SECURE_CONFIG_LOADED);
@@ -91,6 +93,11 @@ class StremioPlaylistServer {
   }
 
   setupRoutes() {
+    // Serve the main interface at root
+    this.app.get('/', (req, res) => {
+      res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
+
     // Health check
     this.app.get('/health', (req, res) => {
       res.json({

@@ -1,4 +1,7 @@
 const axios = require('axios');
+const fs = require('fs-extra');
+const path = require('path');
+const crypto = require('crypto');
 const MESSAGES = require('../messages');
 const packageInfo = require('../../package.json');
 const { getChannelVariations } = require('../channels/variations');
@@ -7,6 +10,9 @@ class LogoService {
   constructor(logger, config = null) {
     this.logger = logger;
     this.logoCache = new Map();
+    this.cacheDir = path.join(__dirname, '../../cache/logos');
+    this.metadataFile = path.join(this.cacheDir, 'metadata.json');
+    this.cacheMetadata = new Map();
     
     // Use config.stremio.userAgent if available, otherwise fallback to package info
     this.userAgent = config?.stremio?.userAgent ||
@@ -18,47 +24,151 @@ class LogoService {
         'User-Agent': this.userAgent
       }
     });
+    
+    // Initialize cache directory and load existing cache
+    this.initializeCache();
+  }
+
+  async initializeCache() {
+    try {
+      // Ensure cache directory exists
+      await fs.ensureDir(this.cacheDir);
+      
+      // Load existing cache metadata
+      if (await fs.pathExists(this.metadataFile)) {
+        const metadata = await fs.readJson(this.metadataFile);
+        this.cacheMetadata = new Map(Object.entries(metadata));
+        this.logger.debug(`Loaded ${this.cacheMetadata.size} cached logo entries`);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to initialize logo cache: ${error.message}`);
+    }
   }
 
   async getChannelLogo(channelName, debridioLogo = null) {
     const cacheKey = channelName.toLowerCase();
     
-    // Check cache first
+    // Check in-memory cache first
     if (this.logoCache.has(cacheKey)) {
       this.logger.debug(MESSAGES.LOGO_SERVICE.CACHE_HIT(channelName));
       return this.logoCache.get(cacheKey);
     }
 
+    // Check persistent cache
+    const cachedLogo = await this.getCachedLogo(cacheKey);
+    if (cachedLogo) {
+      this.logger.debug(`Found cached logo for ${channelName}`);
+      this.logoCache.set(cacheKey, cachedLogo);
+      return cachedLogo;
+    }
+
     this.logger.debug(MESSAGES.LOGO_SERVICE.CACHE_MISS(channelName));
 
     try {
+      let logoUrl = null;
+      let logoSource = 'placeholder';
+
       // 1. Try Wikimedia first (highest priority)
       const wikimediaLogo = await this.searchWikimediaLogo(channelName);
       if (wikimediaLogo) {
-        this.logoCache.set(cacheKey, wikimediaLogo);
-        return wikimediaLogo;
+        logoUrl = wikimediaLogo;
+        logoSource = 'wikimedia';
       }
-
       // 2. Use Debridio logo if available (medium priority)
-      if (debridioLogo) {
+      else if (debridioLogo) {
         this.logger.debug(MESSAGES.LOGO_SERVICE.DEBRIDIO_FALLBACK(channelName));
-        this.logoCache.set(cacheKey, debridioLogo);
-        return debridioLogo;
+        logoUrl = debridioLogo;
+        logoSource = 'debridio';
+      }
+      // 3. Generate placeholder (lowest priority)
+      else {
+        logoUrl = this.generatePlaceholderLogo(channelName);
+        logoSource = 'placeholder';
+        this.logger.debug(MESSAGES.LOGO_SERVICE.PLACEHOLDER_FALLBACK(channelName));
       }
 
-      // 3. Generate placeholder (lowest priority)
-      const placeholderLogo = this.generatePlaceholderLogo(channelName);
-      this.logger.debug(MESSAGES.LOGO_SERVICE.PLACEHOLDER_FALLBACK(channelName));
-      this.logoCache.set(cacheKey, placeholderLogo);
-      return placeholderLogo;
+      // Cache the result
+      await this.cacheLogo(cacheKey, logoUrl, logoSource);
+      this.logoCache.set(cacheKey, logoUrl);
+      return logoUrl;
 
     } catch (error) {
       this.logger.warn(MESSAGES.LOGO_SERVICE.SERVICE_ERROR(channelName, error.message));
       
       // Fallback to placeholder on error
       const placeholderLogo = this.generatePlaceholderLogo(channelName);
+      await this.cacheLogo(cacheKey, placeholderLogo, 'placeholder');
       this.logoCache.set(cacheKey, placeholderLogo);
       return placeholderLogo;
+    }
+  }
+
+  async getCachedLogo(cacheKey) {
+    try {
+      const metadata = this.cacheMetadata.get(cacheKey);
+      if (!metadata) return null;
+
+      // Check if cache is still valid (30 days)
+      const cacheAge = Date.now() - metadata.timestamp;
+      const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+      
+      if (cacheAge > maxAge) {
+        this.logger.debug(`Cache expired for ${cacheKey}`);
+        await this.removeCachedLogo(cacheKey);
+        return null;
+      }
+
+      // For external URLs, just return the URL (no need to store file)
+      if (metadata.source === 'wikimedia' || metadata.source === 'debridio') {
+        return metadata.url;
+      }
+
+      // For placeholder, regenerate (they're dynamic)
+      if (metadata.source === 'placeholder') {
+        return metadata.url;
+      }
+
+      return metadata.url;
+    } catch (error) {
+      this.logger.debug(`Failed to get cached logo for ${cacheKey}: ${error.message}`);
+      return null;
+    }
+  }
+
+  async cacheLogo(cacheKey, logoUrl, source) {
+    try {
+      const metadata = {
+        url: logoUrl,
+        source: source,
+        timestamp: Date.now()
+      };
+
+      this.cacheMetadata.set(cacheKey, metadata);
+      
+      // Save metadata to file
+      await this.saveCacheMetadata();
+      
+      this.logger.debug(`Cached logo for ${cacheKey} from ${source}`);
+    } catch (error) {
+      this.logger.debug(`Failed to cache logo for ${cacheKey}: ${error.message}`);
+    }
+  }
+
+  async removeCachedLogo(cacheKey) {
+    try {
+      this.cacheMetadata.delete(cacheKey);
+      await this.saveCacheMetadata();
+    } catch (error) {
+      this.logger.debug(`Failed to remove cached logo for ${cacheKey}: ${error.message}`);
+    }
+  }
+
+  async saveCacheMetadata() {
+    try {
+      const metadata = Object.fromEntries(this.cacheMetadata);
+      await fs.writeJson(this.metadataFile, metadata, { spaces: 2 });
+    } catch (error) {
+      this.logger.debug(`Failed to save cache metadata: ${error.message}`);
     }
   }
 

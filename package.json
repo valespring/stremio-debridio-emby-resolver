@@ -1,10 +1,18 @@
 {
-  "name": "stremio-emby-playlist",
+  "name": "stremio-debridio-emby-resolver",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "electron-main.js",
+  "homepage": "./",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
+    "electron": "electron .",
+    "electron-dev": "NODE_ENV=development electron .",
+    "build": "electron-builder",
+    "build-mac": "electron-builder --mac",
+    "build-win": "electron-builder --win",
+    "build-linux": "electron-builder --linux",
+    "dist": "npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,12 +20,62 @@
   "license": "ISC",
   "description": "Node.js application that generates M3U playlists from Stremio and Debridio with hourly refresh for Emby compatibility",
   "dependencies": {
-    "express": "^5.1.0",
     "axios": "^1.6.0",
-    "node-cron": "^3.0.3",
-    "fs-extra": "^11.2.0"
+    "express": "^5.1.0",
+    "fs-extra": "^11.2.0",
+    "node-cron": "^3.0.3"
   },
   "devDependencies": {
+    "electron": "^38.1.0",
+    "electron-builder": "^26.0.12",
     "nodemon": "^3.0.0"
+  },
+  "build": {
+    "appId": "com.stremio.debridio.emby.resolver",
+    "productName": "Stremio Debridio Emby Resolver",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**/*",
+      "!node_modules/**/*",
+      "node_modules/express/**/*",
+      "node_modules/axios/**/*",
+      "node_modules/node-cron/**/*",
+      "node_modules/fs-extra/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Stremio Debridio Emby Resolver"
+    }
   }
 }
