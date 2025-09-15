@@ -151,7 +151,7 @@ You can add custom streaming addons by including their full manifest URLs in the
     "enabledAddons": [
       "com.linvo.cinemeta",
       "com.stremio.local",
-      "https://debridio.com/YOUR-API-KEY-HERE/manifest.json"
+      "https://your-addon-url.com/manifest.json"
     ]
   }
 }
