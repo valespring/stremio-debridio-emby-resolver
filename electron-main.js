@@ -212,27 +212,76 @@ class ElectronApp {
     const originalError = console.error;
     const originalWarn = console.warn;
     const originalInfo = console.info;
+    const originalDebug = console.debug;
 
     // Override console methods to send logs to window
     console.log = (...args) => {
       originalLog.apply(console, args);
-      this.sendLogToWindow('info', args.join(' '));
+      const message = args.join(' ');
+      this.sendLogToWindow('info', message);
     };
 
     console.error = (...args) => {
       originalError.apply(console, args);
-      this.sendLogToWindow('error', args.join(' '));
+      const message = args.join(' ');
+      this.sendLogToWindow('error', message);
     };
 
     console.warn = (...args) => {
       originalWarn.apply(console, args);
-      this.sendLogToWindow('warn', args.join(' '));
+      const message = args.join(' ');
+      this.sendLogToWindow('warn', message);
     };
 
     console.info = (...args) => {
       originalInfo.apply(console, args);
-      this.sendLogToWindow('info', args.join(' '));
+      const message = args.join(' ');
+      this.sendLogToWindow('info', message);
     };
+
+    console.debug = (...args) => {
+      originalDebug.apply(console, args);
+      const message = args.join(' ');
+      this.sendLogToWindow('debug', message);
+    };
+
+    // Also intercept the logger if it exists
+    this.interceptLoggerMethods();
+  }
+
+  interceptLoggerMethods() {
+    // Wait a bit for the server to initialize, then intercept logger methods
+    setTimeout(() => {
+      if (this.server && this.server.logger) {
+        const logger = this.server.logger;
+        const originalLoggerInfo = logger.info;
+        const originalLoggerError = logger.error;
+        const originalLoggerWarn = logger.warn;
+        const originalLoggerDebug = logger.debug;
+
+        logger.info = (message, ...args) => {
+          originalLoggerInfo.call(logger, message, ...args);
+          this.sendLogToWindow('info', `${message} ${args.join(' ')}`);
+        };
+
+        logger.error = (message, ...args) => {
+          originalLoggerError.call(logger, message, ...args);
+          this.sendLogToWindow('error', `${message} ${args.join(' ')}`);
+        };
+
+        logger.warn = (message, ...args) => {
+          originalLoggerWarn.call(logger, message, ...args);
+          this.sendLogToWindow('warn', `${message} ${args.join(' ')}`);
+        };
+
+        logger.debug = (message, ...args) => {
+          originalLoggerDebug.call(logger, message, ...args);
+          this.sendLogToWindow('debug', `${message} ${args.join(' ')}`);
+        };
+
+        this.sendLogToWindow('info', 'Enhanced logging intercepted - you will now see detailed server activity');
+      }
+    }, 3000);
   }
 
   sendLogToWindow(level, message) {

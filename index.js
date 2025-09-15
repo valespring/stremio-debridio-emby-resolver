@@ -82,7 +82,6 @@ class StremioPlaylistServer {
 
   setupMiddleware() {
     this.app.use(express.json());
-    this.app.use(express.static('public'));
     
     // CORS middleware
     this.app.use((req, res, next) => {
@@ -93,9 +92,9 @@ class StremioPlaylistServer {
   }
 
   setupRoutes() {
-    // Serve the main interface at root
+    // Root endpoint - redirect to status
     this.app.get('/', (req, res) => {
-      res.sendFile(path.join(__dirname, 'public', 'index.html'));
+      res.redirect('/status');
     });
 
     // Health check
