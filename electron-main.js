@@ -47,10 +47,10 @@ class ElectronApp {
   }
 
   setupAppHandlers() {
-    app.whenReady().then(async () => {
-      await this.startServer();
+    app.whenReady().then(() => {
       this.createWindow();
       this.createTray();
+      this.startServer();
     });
 
     app.on('window-all-closed', () => {
@@ -74,24 +74,19 @@ class ElectronApp {
 
   createWindow() {
     this.mainWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
+      width: 1000,
+      height: 700,
       webPreferences: {
-        nodeIntegration: true,
-        contextIsolation: false,
+        nodeIntegration: false,
+        contextIsolation: true,
         enableRemoteModule: false
       },
       // icon: path.join(__dirname, 'assets', 'icon.png'), // Add icon if available
       title: 'Stremio Debridio Emby Resolver'
     });
 
-    // Load the web interface
-    this.mainWindow.loadURL(`http://localhost:${this.serverPort}`);
-
-    // Send initial log message once page loads
-    this.mainWindow.webContents.once('did-finish-load', () => {
-      this.sendLogToWindow('info', 'Electron interface loaded');
-    });
+    // Load the server's web interface once it's ready
+    this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
 
     // Open external links in default browser
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
