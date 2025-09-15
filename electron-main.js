@@ -85,8 +85,8 @@ class ElectronApp {
       width: 1000,
       height: 700,
       webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
+        nodeIntegration: true,
+        contextIsolation: false,
         enableRemoteModule: false
       },
       // icon: path.join(__dirname, 'assets', 'icon.png'), // Add icon if available
@@ -95,6 +95,18 @@ class ElectronApp {
 
     // Load the server's web interface once it's ready
     this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+    
+    // Inject logging overlay after page loads
+    this.mainWindow.webContents.once('did-finish-load', () => {
+      this.injectLoggingOverlay();
+      
+      // Test logging to make sure it's working
+      setTimeout(() => {
+        console.log('Test log message - if you see this, logging is working!');
+        console.info('Server should be running and processing requests');
+        console.warn('This is a test warning message');
+      }, 2000);
+    });
 
     // Open external links in default browser
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -109,6 +121,85 @@ class ElectronApp {
         this.mainWindow.hide();
       }
     });
+  }
+
+  injectLoggingOverlay() {
+    this.mainWindow.webContents.executeJavaScript(`
+      // Create logging overlay
+      const overlay = document.createElement('div');
+      overlay.id = 'logging-overlay';
+      overlay.style.cssText = \`
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        width: 400px;
+        height: 300px;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        font-family: monospace;
+        font-size: 12px;
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 10000;
+        overflow-y: auto;
+        display: none;
+      \`;
+      
+      const toggleButton = document.createElement('button');
+      toggleButton.textContent = 'Show Logs';
+      toggleButton.style.cssText = \`
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 10001;
+        background: #007acc;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+      \`;
+      
+      toggleButton.onclick = () => {
+        if (overlay.style.display === 'none') {
+          overlay.style.display = 'block';
+          toggleButton.textContent = 'Hide Logs';
+          toggleButton.style.top = '320px';
+        } else {
+          overlay.style.display = 'none';
+          toggleButton.textContent = 'Show Logs';
+          toggleButton.style.top = '10px';
+        }
+      };
+      
+      document.body.appendChild(overlay);
+      document.body.appendChild(toggleButton);
+      
+      // Function to add log entries
+      window.addLogEntry = (level, message) => {
+        const logEntry = document.createElement('div');
+        logEntry.style.cssText = \`
+          margin: 2px 0;
+          padding: 2px;
+          border-left: 3px solid \${level === 'error' ? '#f44' : level === 'warn' ? '#fa0' : '#4af'};
+          padding-left: 8px;
+        \`;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        logEntry.textContent = \`[\${timestamp}] \${message}\`;
+        
+        overlay.appendChild(logEntry);
+        overlay.scrollTop = overlay.scrollHeight;
+        
+        // Keep only last 100 entries
+        while (overlay.children.length > 100) {
+          overlay.removeChild(overlay.firstChild);
+        }
+      };
+      
+      // Add initial message
+      window.addLogEntry('info', 'Logging overlay initialized');
+    `);
   }
 
   createTray() {
@@ -189,27 +280,27 @@ class ElectronApp {
       // If secureAddonsUrl is provided, inject it into the environment or config
       if (this.secureAddonsUrl) {
         process.env.SECURE_ADDONS_URL = this.secureAddonsUrl;
-        this.sendLogToWindow('info', 'Set secure addons URL from command line: ' + this.secureAddonsUrl);
+        console.log('Set secure addons URL from command line: ' + this.secureAddonsUrl);
       }
 
-      this.server = new StremioPlaylistServer();
-      
-      // Intercept console logs from the server
+      // Intercept console logs from the server BEFORE creating the server
       this.interceptServerLogs();
+      
+      this.server = new StremioPlaylistServer();
       
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {
         await this.injectSecureAddonsUrl();
       }
       
-      this.sendLogToWindow('info', 'Starting server...');
+      console.log('Starting server...');
       await this.server.start();
       
-      this.sendLogToWindow('info', 'Server started successfully on port ' + this.serverPort);
+      console.log('Server started successfully on port ' + this.serverPort);
       this.sendServerStatus('Running');
       
     } catch (error) {
-      this.sendLogToWindow('error', 'Failed to start server: ' + error.message);
+      console.error('Failed to start server: ' + error.message);
       dialog.showErrorBox('Server Error', 'Failed to start the server: ' + error.message);
     }
   }
@@ -294,7 +385,13 @@ class ElectronApp {
 
   sendLogToWindow(level, message) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('log-message', { level, message });
+      this.mainWindow.webContents.executeJavaScript(`
+        if (typeof window.addLogEntry === 'function') {
+          window.addLogEntry('${level}', ${JSON.stringify(message)});
+        }
+      `).catch(() => {
+        // Ignore errors if page isn't ready yet
+      });
     }
   }
 

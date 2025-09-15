@@ -10,7 +10,14 @@ class LogoService {
   constructor(logger, config = null) {
     this.logger = logger;
     this.logoCache = new Map();
-    this.cacheDir = path.join(__dirname, '../../cache/logos');
+    
+    // Use a writable cache directory - in packaged app, use resources directory
+    if (process.resourcesPath) {
+      this.cacheDir = path.join(process.resourcesPath, 'cache', 'logos');
+    } else {
+      this.cacheDir = path.join(__dirname, '../../cache/logos');
+    }
+    
     this.metadataFile = path.join(this.cacheDir, 'metadata.json');
     this.cacheMetadata = new Map();
     
