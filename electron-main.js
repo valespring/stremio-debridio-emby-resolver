@@ -399,9 +399,6 @@ class ElectronApp {
       const message = args.join(' ');
       this.sendLogToWindow('debug', message);
     };
-
-    // Also intercept the logger if it exists
-    this.interceptLoggerMethods();
   }
 
   interceptServerLogger() {
