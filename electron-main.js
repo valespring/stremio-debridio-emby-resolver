@@ -99,6 +99,18 @@ class ElectronApp {
     // Inject logging overlay after page loads
     this.mainWindow.webContents.once('did-finish-load', () => {
       this.injectLoggingOverlay();
+      
+      // Test adding log entries directly after overlay is ready
+      setTimeout(() => {
+        this.mainWindow.webContents.executeJavaScript(`
+          if (typeof window.addLogEntry === 'function') {
+            window.addLogEntry('info', 'Direct test message from electron');
+            window.addLogEntry('warn', 'Testing if log forwarding works');
+          }
+        `).catch(err => {
+          console.error('Failed to add test log entries:', err);
+        });
+      }, 1000);
     });
 
     // Open external links in default browser
@@ -329,10 +341,13 @@ class ElectronApp {
         console.log('Set secure addons URL from command line: ' + this.secureAddonsUrl);
       }
 
+      console.log('Creating StremioPlaylistServer...');
       this.server = new StremioPlaylistServer();
+      console.log('Server created, setting up callback...');
       
       // Set up log forwarding from server to electron window
       this.server.setElectronLogCallback((level, message) => {
+        console.log(`Callback received: [${level}] ${message}`);
         // Send directly to the window using the same method that works
         if (this.mainWindow && !this.mainWindow.isDestroyed()) {
           this.mainWindow.webContents.executeJavaScript(`
@@ -344,6 +359,7 @@ class ElectronApp {
           });
         }
       });
+      console.log('Callback set up, starting server...');
       
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {
