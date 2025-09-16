@@ -361,6 +361,15 @@ class ElectronApp {
       });
       console.log('Callback set up, starting server...');
       
+      // Test if callback is actually set
+      console.log('Testing callback immediately...');
+      if (this.server.electronLogCallback) {
+        console.log('Callback exists, calling it...');
+        this.server.electronLogCallback('info', 'Immediate callback test');
+      } else {
+        console.log('ERROR: Callback was not set properly');
+      }
+      
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {
         await this.injectSecureAddonsUrl();
