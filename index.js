@@ -30,6 +30,8 @@ class StremioPlaylistServer {
       
       // Set up electron log forwarding if callback is provided
       if (this.electronLogCallback) {
+        console.log('Setting up electron log forwarding...');
+        this.electronLogCallback('info', 'Setting up electron log forwarding...');
         this.setupElectronLogForwarding();
       }
       
@@ -59,6 +61,10 @@ class StremioPlaylistServer {
   // Method for electron app to set up log forwarding
   setElectronLogCallback(callback) {
     this.electronLogCallback = callback;
+    console.log('Electron log callback set up');
+    if (callback) {
+      callback('info', 'Electron log forwarding initialized');
+    }
   }
 
   setupElectronLogForwarding() {

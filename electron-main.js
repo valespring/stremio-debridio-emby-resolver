@@ -99,13 +99,6 @@ class ElectronApp {
     // Inject logging overlay after page loads
     this.mainWindow.webContents.once('did-finish-load', () => {
       this.injectLoggingOverlay();
-      
-      // Test logging to make sure it's working
-      setTimeout(() => {
-        console.log('Test log message - if you see this, logging is working!');
-        console.info('Server should be running and processing requests');
-        console.warn('This is a test warning message');
-      }, 2000);
     });
 
     // Open external links in default browser
@@ -336,15 +329,15 @@ class ElectronApp {
         console.log('Set secure addons URL from command line: ' + this.secureAddonsUrl);
       }
 
-      // Intercept console logs from the server BEFORE creating the server
-      this.interceptServerLogs();
-      
       this.server = new StremioPlaylistServer();
       
       // Set up log forwarding from server to electron window
       this.server.setElectronLogCallback((level, message) => {
+        console.log(`[ELECTRON] Received log: [${level}] ${message}`);
         this.sendLogToWindow(level, message);
       });
+      
+      console.log('Electron log callback set up for server');
       
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {
@@ -363,45 +356,7 @@ class ElectronApp {
     }
   }
 
-  interceptServerLogs() {
-    // Store original console methods
-    const originalLog = console.log;
-    const originalError = console.error;
-    const originalWarn = console.warn;
-    const originalInfo = console.info;
-    const originalDebug = console.debug;
-
-    // Override console methods to send logs to window
-    console.log = (...args) => {
-      originalLog.apply(console, args);
-      const message = args.join(' ');
-      this.sendLogToWindow('info', message);
-    };
-
-    console.error = (...args) => {
-      originalError.apply(console, args);
-      const message = args.join(' ');
-      this.sendLogToWindow('error', message);
-    };
-
-    console.warn = (...args) => {
-      originalWarn.apply(console, args);
-      const message = args.join(' ');
-      this.sendLogToWindow('warn', message);
-    };
-
-    console.info = (...args) => {
-      originalInfo.apply(console, args);
-      const message = args.join(' ');
-      this.sendLogToWindow('info', message);
-    };
-
-    console.debug = (...args) => {
-      originalDebug.apply(console, args);
-      const message = args.join(' ');
-      this.sendLogToWindow('debug', message);
-    };
-  }
+  
 
   
 
