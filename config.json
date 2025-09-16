@@ -31,7 +31,8 @@
     ],
     "categories": [
       "movie",
-      "series"
+      "series",
+      "tv"
     ],
     "filters": {
       "minYear": 2000,
