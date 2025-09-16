@@ -160,20 +160,68 @@ class ElectronApp {
         cursor: pointer;
       \`;
       
+      const autoScrollButton = document.createElement('button');
+      autoScrollButton.textContent = 'Auto-scroll: ON';
+      autoScrollButton.style.cssText = \`
+        position: fixed;
+        top: 10px;
+        right: 420px;
+        z-index: 10001;
+        background: #28a745;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        display: none;
+      \`;
+      
+      let autoScroll = true;
+      let userScrolling = false;
+      
       toggleButton.onclick = () => {
         if (overlay.style.display === 'none') {
           overlay.style.display = 'block';
+          autoScrollButton.style.display = 'block';
           toggleButton.textContent = 'Hide Logs';
           toggleButton.style.top = '320px';
+          autoScrollButton.style.top = '320px';
         } else {
           overlay.style.display = 'none';
+          autoScrollButton.style.display = 'none';
           toggleButton.textContent = 'Show Logs';
           toggleButton.style.top = '10px';
+          autoScrollButton.style.top = '10px';
         }
       };
       
+      autoScrollButton.onclick = () => {
+        autoScroll = !autoScroll;
+        autoScrollButton.textContent = 'Auto-scroll: ' + (autoScroll ? 'ON' : 'OFF');
+        autoScrollButton.style.background = autoScroll ? '#28a745' : '#6c757d';
+        if (autoScroll) {
+          overlay.scrollTop = overlay.scrollHeight;
+        }
+      };
+      
+      // Detect manual scrolling
+      overlay.addEventListener('scroll', () => {
+        const isAtBottom = overlay.scrollTop + overlay.clientHeight >= overlay.scrollHeight - 5;
+        if (!isAtBottom && autoScroll) {
+          // User scrolled up, temporarily disable auto-scroll
+          userScrolling = true;
+          setTimeout(() => {
+            userScrolling = false;
+          }, 3000); // Re-enable auto-scroll after 3 seconds of no manual scrolling
+        } else if (isAtBottom && userScrolling) {
+          // User scrolled back to bottom, re-enable auto-scroll
+          userScrolling = false;
+        }
+      });
+      
       document.body.appendChild(overlay);
       document.body.appendChild(toggleButton);
+      document.body.appendChild(autoScrollButton);
       
       // Function to add log entries
       window.addLogEntry = (level, message) => {
@@ -181,18 +229,23 @@ class ElectronApp {
         logEntry.style.cssText = \`
           margin: 2px 0;
           padding: 2px;
-          border-left: 3px solid \${level === 'error' ? '#f44' : level === 'warn' ? '#fa0' : '#4af'};
+          border-left: 3px solid \${level === 'error' ? '#f44' : level === 'warn' ? '#fa0' : level === 'debug' ? '#888' : '#4af'};
           padding-left: 8px;
+          opacity: \${level === 'debug' ? '0.7' : '1'};
         \`;
         
         const timestamp = new Date().toLocaleTimeString();
         logEntry.textContent = \`[\${timestamp}] \${message}\`;
         
         overlay.appendChild(logEntry);
-        overlay.scrollTop = overlay.scrollHeight;
         
-        // Keep only last 100 entries
-        while (overlay.children.length > 100) {
+        // Only auto-scroll if enabled and user isn't manually scrolling
+        if (autoScroll && !userScrolling) {
+          overlay.scrollTop = overlay.scrollHeight;
+        }
+        
+        // Keep only last 200 entries (increased from 100)
+        while (overlay.children.length > 200) {
           overlay.removeChild(overlay.firstChild);
         }
       };
@@ -288,6 +341,9 @@ class ElectronApp {
       
       this.server = new StremioPlaylistServer();
       
+      // Intercept the server's logger methods immediately after server creation
+      this.interceptServerLogger();
+      
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {
         await this.injectSecureAddonsUrl();
@@ -348,39 +404,94 @@ class ElectronApp {
     this.interceptLoggerMethods();
   }
 
-  interceptLoggerMethods() {
-    // Wait a bit for the server to initialize, then intercept logger methods
+  interceptServerLogger() {
+    // Intercept the server's logger methods immediately
+    if (this.server && this.server.logger) {
+      const logger = this.server.logger;
+      const originalLoggerInfo = logger.info;
+      const originalLoggerError = logger.error;
+      const originalLoggerWarn = logger.warn;
+      const originalLoggerDebug = logger.debug;
+
+      logger.info = (message, ...args) => {
+        originalLoggerInfo.call(logger, message, ...args);
+        this.sendLogToWindow('info', `${message} ${args.join(' ')}`);
+      };
+
+      logger.error = (message, ...args) => {
+        originalLoggerError.call(logger, message, ...args);
+        this.sendLogToWindow('error', `${message} ${args.join(' ')}`);
+      };
+
+      logger.warn = (message, ...args) => {
+        originalLoggerWarn.call(logger, message, ...args);
+        this.sendLogToWindow('warn', `${message} ${args.join(' ')}`);
+      };
+
+      logger.debug = (message, ...args) => {
+        originalLoggerDebug.call(logger, message, ...args);
+        this.sendLogToWindow('debug', `${message} ${args.join(' ')}`);
+      };
+
+      this.sendLogToWindow('info', 'Enhanced logging intercepted - you will now see detailed server activity');
+    }
+    
+    // Also intercept logger methods from services (they might have their own logger instances)
+    this.interceptServiceLoggers();
+  }
+
+  interceptServiceLoggers() {
+    // Wait a moment for services to be initialized, then intercept their loggers
     setTimeout(() => {
-      if (this.server && this.server.logger) {
-        const logger = this.server.logger;
-        const originalLoggerInfo = logger.info;
-        const originalLoggerError = logger.error;
-        const originalLoggerWarn = logger.warn;
-        const originalLoggerDebug = logger.debug;
-
-        logger.info = (message, ...args) => {
-          originalLoggerInfo.call(logger, message, ...args);
-          this.sendLogToWindow('info', `${message} ${args.join(' ')}`);
-        };
-
-        logger.error = (message, ...args) => {
-          originalLoggerError.call(logger, message, ...args);
-          this.sendLogToWindow('error', `${message} ${args.join(' ')}`);
-        };
-
-        logger.warn = (message, ...args) => {
-          originalLoggerWarn.call(logger, message, ...args);
-          this.sendLogToWindow('warn', `${message} ${args.join(' ')}`);
-        };
-
-        logger.debug = (message, ...args) => {
-          originalLoggerDebug.call(logger, message, ...args);
-          this.sendLogToWindow('debug', `${message} ${args.join(' ')}`);
-        };
-
-        this.sendLogToWindow('info', 'Enhanced logging intercepted - you will now see detailed server activity');
+      if (this.server) {
+        // Try to intercept stremioService logger
+        if (this.server.stremioService && this.server.stremioService.logger) {
+          this.interceptLoggerInstance(this.server.stremioService.logger, 'StremioService');
+        }
+        
+        // Try to intercept playlistGenerator logger
+        if (this.server.playlistGenerator && this.server.playlistGenerator.logger) {
+          this.interceptLoggerInstance(this.server.playlistGenerator.logger, 'PlaylistGenerator');
+        }
+        
+        // Try to intercept logoService logger
+        if (this.server.logoService && this.server.logoService.logger) {
+          this.interceptLoggerInstance(this.server.logoService.logger, 'LogoService');
+        }
       }
-    }, 3000);
+    }, 1000);
+  }
+
+  interceptLoggerInstance(logger, serviceName) {
+    if (!logger._intercepted) {
+      const originalInfo = logger.info;
+      const originalError = logger.error;
+      const originalWarn = logger.warn;
+      const originalDebug = logger.debug;
+
+      logger.info = (message, ...args) => {
+        originalInfo.call(logger, message, ...args);
+        this.sendLogToWindow('info', `[${serviceName}] ${message} ${args.join(' ')}`);
+      };
+
+      logger.error = (message, ...args) => {
+        originalError.call(logger, message, ...args);
+        this.sendLogToWindow('error', `[${serviceName}] ${message} ${args.join(' ')}`);
+      };
+
+      logger.warn = (message, ...args) => {
+        originalWarn.call(logger, message, ...args);
+        this.sendLogToWindow('warn', `[${serviceName}] ${message} ${args.join(' ')}`);
+      };
+
+      logger.debug = (message, ...args) => {
+        originalDebug.call(logger, message, ...args);
+        this.sendLogToWindow('debug', `[${serviceName}] ${message} ${args.join(' ')}`);
+      };
+
+      logger._intercepted = true;
+      this.sendLogToWindow('info', `${serviceName} logger intercepted`);
+    }
   }
 
   sendLogToWindow(level, message) {
