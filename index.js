@@ -62,6 +62,8 @@ class StremioPlaylistServer {
     this.electronLogCallback = callback;
     if (callback) {
       callback('info', 'Electron log forwarding initialized');
+      // Test with a simple message
+      callback('info', 'Server callback is working!');
     }
   }
 

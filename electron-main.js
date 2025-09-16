@@ -333,7 +333,16 @@ class ElectronApp {
       
       // Set up log forwarding from server to electron window
       this.server.setElectronLogCallback((level, message) => {
-        this.sendLogToWindow(level, message);
+        // Send directly to the window using the same method that works
+        if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+          this.mainWindow.webContents.executeJavaScript(`
+            if (typeof window.addLogEntry === 'function') {
+              window.addLogEntry('${level}', ${JSON.stringify(message)});
+            }
+          `).catch(() => {
+            // Ignore errors if page isn't ready yet
+          });
+        }
       });
       
       // Modify the server to use the secure addons URL if provided
