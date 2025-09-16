@@ -333,11 +333,8 @@ class ElectronApp {
       
       // Set up log forwarding from server to electron window
       this.server.setElectronLogCallback((level, message) => {
-        console.log(`[ELECTRON] Received log: [${level}] ${message}`);
         this.sendLogToWindow(level, message);
       });
-      
-      console.log('Electron log callback set up for server');
       
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {

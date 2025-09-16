@@ -30,7 +30,6 @@ class StremioPlaylistServer {
       
       // Set up electron log forwarding if callback is provided
       if (this.electronLogCallback) {
-        console.log('Setting up electron log forwarding...');
         this.electronLogCallback('info', 'Setting up electron log forwarding...');
         this.setupElectronLogForwarding();
       }
@@ -61,7 +60,6 @@ class StremioPlaylistServer {
   // Method for electron app to set up log forwarding
   setElectronLogCallback(callback) {
     this.electronLogCallback = callback;
-    console.log('Electron log callback set up');
     if (callback) {
       callback('info', 'Electron log forwarding initialized');
     }
@@ -73,32 +71,6 @@ class StremioPlaylistServer {
     // Intercept the main logger
     this.interceptLogger(this.logger, 'Server');
     
-    // Also intercept console methods for any remaining console.log calls
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-    const originalConsoleInfo = console.info;
-
-    console.log = (...args) => {
-      originalConsoleLog.apply(console, args);
-      this.electronLogCallback('info', args.join(' '));
-    };
-
-    console.error = (...args) => {
-      originalConsoleError.apply(console, args);
-      this.electronLogCallback('error', args.join(' '));
-    };
-
-    console.warn = (...args) => {
-      originalConsoleWarn.apply(console, args);
-      this.electronLogCallback('warn', args.join(' '));
-    };
-
-    console.info = (...args) => {
-      originalConsoleInfo.apply(console, args);
-      this.electronLogCallback('info', args.join(' '));
-    };
-
     // Intercept service loggers after they're created
     setTimeout(() => {
       if (this.stremioService && this.stremioService.logger) {
