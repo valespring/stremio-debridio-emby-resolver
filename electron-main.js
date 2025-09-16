@@ -341,8 +341,10 @@ class ElectronApp {
       
       this.server = new StremioPlaylistServer();
       
-      // Intercept the server's logger methods immediately after server creation
-      this.interceptServerLogger();
+      // Set up log forwarding from server to electron window
+      this.server.setElectronLogCallback((level, message) => {
+        this.sendLogToWindow(level, message);
+      });
       
       // Modify the server to use the secure addons URL if provided
       if (this.secureAddonsUrl) {
@@ -401,95 +403,7 @@ class ElectronApp {
     };
   }
 
-  interceptServerLogger() {
-    // Intercept the server's logger methods immediately
-    if (this.server && this.server.logger) {
-      const logger = this.server.logger;
-      const originalLoggerInfo = logger.info;
-      const originalLoggerError = logger.error;
-      const originalLoggerWarn = logger.warn;
-      const originalLoggerDebug = logger.debug;
-
-      logger.info = (message, ...args) => {
-        originalLoggerInfo.call(logger, message, ...args);
-        this.sendLogToWindow('info', `${message} ${args.join(' ')}`);
-      };
-
-      logger.error = (message, ...args) => {
-        originalLoggerError.call(logger, message, ...args);
-        this.sendLogToWindow('error', `${message} ${args.join(' ')}`);
-      };
-
-      logger.warn = (message, ...args) => {
-        originalLoggerWarn.call(logger, message, ...args);
-        this.sendLogToWindow('warn', `${message} ${args.join(' ')}`);
-      };
-
-      logger.debug = (message, ...args) => {
-        originalLoggerDebug.call(logger, message, ...args);
-        this.sendLogToWindow('debug', `${message} ${args.join(' ')}`);
-      };
-
-      this.sendLogToWindow('info', 'Enhanced logging intercepted - you will now see detailed server activity');
-    }
-    
-    // Also intercept logger methods from services (they might have their own logger instances)
-    this.interceptServiceLoggers();
-  }
-
-  interceptServiceLoggers() {
-    // Wait a moment for services to be initialized, then intercept their loggers
-    setTimeout(() => {
-      if (this.server) {
-        // Try to intercept stremioService logger
-        if (this.server.stremioService && this.server.stremioService.logger) {
-          this.interceptLoggerInstance(this.server.stremioService.logger, 'StremioService');
-        }
-        
-        // Try to intercept playlistGenerator logger
-        if (this.server.playlistGenerator && this.server.playlistGenerator.logger) {
-          this.interceptLoggerInstance(this.server.playlistGenerator.logger, 'PlaylistGenerator');
-        }
-        
-        // Try to intercept logoService logger
-        if (this.server.logoService && this.server.logoService.logger) {
-          this.interceptLoggerInstance(this.server.logoService.logger, 'LogoService');
-        }
-      }
-    }, 1000);
-  }
-
-  interceptLoggerInstance(logger, serviceName) {
-    if (!logger._intercepted) {
-      const originalInfo = logger.info;
-      const originalError = logger.error;
-      const originalWarn = logger.warn;
-      const originalDebug = logger.debug;
-
-      logger.info = (message, ...args) => {
-        originalInfo.call(logger, message, ...args);
-        this.sendLogToWindow('info', `[${serviceName}] ${message} ${args.join(' ')}`);
-      };
-
-      logger.error = (message, ...args) => {
-        originalError.call(logger, message, ...args);
-        this.sendLogToWindow('error', `[${serviceName}] ${message} ${args.join(' ')}`);
-      };
-
-      logger.warn = (message, ...args) => {
-        originalWarn.call(logger, message, ...args);
-        this.sendLogToWindow('warn', `[${serviceName}] ${message} ${args.join(' ')}`);
-      };
-
-      logger.debug = (message, ...args) => {
-        originalDebug.call(logger, message, ...args);
-        this.sendLogToWindow('debug', `[${serviceName}] ${message} ${args.join(' ')}`);
-      };
-
-      logger._intercepted = true;
-      this.sendLogToWindow('info', `${serviceName} logger intercepted`);
-    }
-  }
+  
 
   sendLogToWindow(level, message) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {

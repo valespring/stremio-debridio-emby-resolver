@@ -17,6 +17,7 @@ class StremioPlaylistServer {
     this.cronJob = null;
     this.lastUpdate = null;
     this.isUpdating = false;
+    this.electronLogCallback = null; // For electron app log forwarding
   }
 
   async initialize() {
@@ -26,6 +27,11 @@ class StremioPlaylistServer {
       
       // Initialize logger
       this.logger = new Logger(this.config.logging);
+      
+      // Set up electron log forwarding if callback is provided
+      if (this.electronLogCallback) {
+        this.setupElectronLogForwarding();
+      }
       
       // Initialize services
       this.stremioService = new StremioService(this.config, this.logger);
@@ -48,6 +54,88 @@ class StremioPlaylistServer {
       console.error(MESSAGES.CONFIG.INITIALIZE_FAILED, error);
       process.exit(1);
     }
+  }
+
+  // Method for electron app to set up log forwarding
+  setElectronLogCallback(callback) {
+    this.electronLogCallback = callback;
+  }
+
+  setupElectronLogForwarding() {
+    if (!this.electronLogCallback) return;
+
+    // Intercept the main logger
+    this.interceptLogger(this.logger, 'Server');
+    
+    // Also intercept console methods for any remaining console.log calls
+    const originalConsoleLog = console.log;
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+    const originalConsoleInfo = console.info;
+
+    console.log = (...args) => {
+      originalConsoleLog.apply(console, args);
+      this.electronLogCallback('info', args.join(' '));
+    };
+
+    console.error = (...args) => {
+      originalConsoleError.apply(console, args);
+      this.electronLogCallback('error', args.join(' '));
+    };
+
+    console.warn = (...args) => {
+      originalConsoleWarn.apply(console, args);
+      this.electronLogCallback('warn', args.join(' '));
+    };
+
+    console.info = (...args) => {
+      originalConsoleInfo.apply(console, args);
+      this.electronLogCallback('info', args.join(' '));
+    };
+
+    // Intercept service loggers after they're created
+    setTimeout(() => {
+      if (this.stremioService && this.stremioService.logger) {
+        this.interceptLogger(this.stremioService.logger, 'StremioService');
+      }
+      if (this.playlistGenerator && this.playlistGenerator.logger) {
+        this.interceptLogger(this.playlistGenerator.logger, 'PlaylistGenerator');
+      }
+      if (this.stremioService && this.stremioService.logoService && this.stremioService.logoService.logger) {
+        this.interceptLogger(this.stremioService.logoService.logger, 'LogoService');
+      }
+    }, 100);
+  }
+
+  interceptLogger(logger, serviceName) {
+    if (!logger || logger._electronIntercepted) return;
+
+    const originalInfo = logger.info;
+    const originalError = logger.error;
+    const originalWarn = logger.warn;
+    const originalDebug = logger.debug;
+
+    logger.info = (message, ...args) => {
+      originalInfo.call(logger, message, ...args);
+      this.electronLogCallback('info', `[${serviceName}] ${message} ${args.join(' ')}`);
+    };
+
+    logger.error = (message, ...args) => {
+      originalError.call(logger, message, ...args);
+      this.electronLogCallback('error', `[${serviceName}] ${message} ${args.join(' ')}`);
+    };
+
+    logger.warn = (message, ...args) => {
+      originalWarn.call(logger, message, ...args);
+      this.electronLogCallback('warn', `[${serviceName}] ${message} ${args.join(' ')}`);
+    };
+
+    logger.debug = (message, ...args) => {
+      originalDebug.call(logger, message, ...args);
+      this.electronLogCallback('debug', `[${serviceName}] ${message} ${args.join(' ')}`);
+    };
+
+    logger._electronIntercepted = true;
   }
 
   async loadConfig() {
