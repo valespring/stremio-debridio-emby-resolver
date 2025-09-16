@@ -334,6 +334,7 @@ class ElectronApp {
   }
 
   async startServer() {
+    console.log('=== ELECTRON startServer() method called ===');
     try {
       // If secureAddonsUrl is provided, inject it into the environment or config
       if (this.secureAddonsUrl) {
