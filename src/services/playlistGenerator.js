@@ -101,13 +101,14 @@ class PlaylistGenerator {
       }
       
       // Add each available stream as a separate entry
-      for (const stream of availableStreams) {
+      for (let streamIndex = 0; streamIndex < availableStreams.length; streamIndex++) {
+        const stream = availableStreams[streamIndex];
         const duration = item.duration ? Math.floor(item.duration * 60) : -1; // Convert minutes to seconds
         const title = this.formatTitle(item, stream);
         const groupTitle = this.getGroupTitle(item);
         
-        // Generate unique channel ID for EPG matching
-        const channelId = this.generateChannelId(item, stream);
+        // Generate unique channel ID for EPG matching (include stream index for uniqueness)
+        const channelId = this.generateChannelId(item, stream, streamIndex);
         
         // Build EXTINF line with Emby-compatible attributes
         let extinfLine = `#EXTINF:${duration}`;
@@ -213,7 +214,7 @@ class PlaylistGenerator {
     return parts.join(' - ') || 'General';
   }
 
-  generateChannelId(item, stream) {
+  generateChannelId(item, stream, streamIndex = 0) {
     // Create a unique but consistent channel ID for EPG matching
     const baseId = item.title
       .toLowerCase()
@@ -224,7 +225,10 @@ class PlaylistGenerator {
       ? stream.source.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10)
       : 'default';
     
-    return `${baseId}-${streamId}`;
+    // Add stream index to ensure uniqueness when multiple streams exist for the same item
+    const suffix = streamIndex > 0 ? `-${streamIndex + 1}` : '';
+    
+    return `${baseId}-${streamId}${suffix}`;
   }
 
   sanitizeAttribute(value) {
