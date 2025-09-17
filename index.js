@@ -127,30 +127,91 @@ class StremioPlaylistServer {
       // Check if we're in a packaged app (when running via electron)
       if (process.resourcesPath) {
         configPath = path.join(process.resourcesPath, 'config.json');
-        secureConfigPath = path.join(process.resourcesPath, 'config.secure.json');
+        
+        // For secure config in packaged apps, check both locations:
+        // 1. User data directory (where electron writes it)
+        // 2. Resources directory (fallback)
+        const { app } = require('electron');
+        const userDataSecureConfig = path.join(app.getPath('userData'), 'config.secure.json');
+        const resourcesSecureConfig = path.join(process.resourcesPath, 'config.secure.json');
+        
+        // Prefer user data location, fallback to resources
+        if (await fs.pathExists(userDataSecureConfig)) {
+          secureConfigPath = userDataSecureConfig;
+          console.log('Using secure config from user data:', secureConfigPath);
+        } else if (await fs.pathExists(resourcesSecureConfig)) {
+          secureConfigPath = resourcesSecureConfig;
+          console.log('Using secure config from resources:', secureConfigPath);
+        } else {
+          secureConfigPath = userDataSecureConfig; // Default for writing
+          console.log('No secure config found, will use user data path:', secureConfigPath);
+        }
       }
       
       // Load main config
       const configData = await fs.readFile(configPath, 'utf8');
       this.config = JSON.parse(configData);
       
-      // Load secure config if it exists
+      // Check for secure addons URL from environment (set by electron)
+      if (process.env.SECURE_ADDONS_URL) {
+        console.log('Found secure addons URL from environment:', process.env.SECURE_ADDONS_URL);
+        
+        // Decode URL if it's double-encoded
+        let cleanUrl = process.env.SECURE_ADDONS_URL;
+        if (cleanUrl.includes('%3D')) {
+          cleanUrl = decodeURIComponent(cleanUrl);
+          console.log('Decoded URL from:', process.env.SECURE_ADDONS_URL, 'to:', cleanUrl);
+        }
+        
+        // Add to config directly
+        if (!this.config.secureAddons) {
+          this.config.secureAddons = [];
+        }
+        if (!this.config.secureAddons.includes(cleanUrl)) {
+          this.config.secureAddons.push(cleanUrl);
+        }
+        
+        // Also add to enabled addons
+        this.config.sources.enabledAddons = [
+          ...this.config.sources.enabledAddons,
+          cleanUrl
+        ];
+        
+        console.log('Added secure addon from environment to config');
+      }
+      
+      // Load secure config file if it exists
       if (await fs.pathExists(secureConfigPath)) {
         const secureConfigData = await fs.readFile(secureConfigPath, 'utf8');
         const secureConfig = JSON.parse(secureConfigData);
         
         // Merge secure addons with regular addons and also keep them separate
         if (secureConfig.secureAddons && Array.isArray(secureConfig.secureAddons)) {
+          // Decode any double-encoded URLs in the config file
+          const cleanSecureAddons = secureConfig.secureAddons.map(url => {
+            if (url.includes('%3D')) {
+              const decoded = decodeURIComponent(url);
+              console.log('Decoded secure addon URL from:', url, 'to:', decoded);
+              return decoded;
+            }
+            return url;
+          });
+          
           this.config.sources.enabledAddons = [
             ...this.config.sources.enabledAddons,
-            ...secureConfig.secureAddons
+            ...cleanSecureAddons
           ];
           // Also keep them in secureAddons for the service to find
-          this.config.secureAddons = secureConfig.secureAddons;
+          if (!this.config.secureAddons) {
+            this.config.secureAddons = [];
+          }
+          this.config.secureAddons = [...this.config.secureAddons, ...cleanSecureAddons];
         }
         
         this.logger?.info(MESSAGES.CONFIG.SECURE_CONFIG_LOADED);
       }
+      
+      console.log('Final enabled addons:', this.config.sources.enabledAddons);
     } catch (error) {
       throw new Error(MESSAGES.CONFIG.LOAD_FAILED(error.message));
     }

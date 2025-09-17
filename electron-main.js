@@ -415,13 +415,30 @@ class ElectronApp {
     const path = require('path');
     
     try {
-      // Create or update secure config with the provided URL
-      const secureConfigPath = path.join(__dirname, 'config.secure.json');
+      // Determine the correct config path (same logic as loadPortFromConfig)
+      let secureConfigPath = path.join(__dirname, 'config.secure.json');
+      
+      // Check if we're in a packaged app
+      if (process.resourcesPath) {
+        // In packaged apps, we need to write to a writable location
+        const { app } = require('electron');
+        const userDataPath = app.getPath('userData');
+        secureConfigPath = path.join(userDataPath, 'config.secure.json');
+        console.log('Using user data path for secure config:', secureConfigPath);
+      }
+      
       let secureConfig = {};
       
       if (await fs.pathExists(secureConfigPath)) {
         const configData = await fs.readFile(secureConfigPath, 'utf8');
         secureConfig = JSON.parse(configData);
+      }
+      
+      // Ensure the URL is properly decoded (fix double encoding issue)
+      let cleanUrl = this.secureAddonsUrl;
+      if (cleanUrl.includes('%3D')) {
+        cleanUrl = decodeURIComponent(cleanUrl);
+        console.log('Decoded URL from:', this.secureAddonsUrl, 'to:', cleanUrl);
       }
       
       // Add the secure addons URL to the config
@@ -430,12 +447,15 @@ class ElectronApp {
       }
       
       // Add the URL if it's not already present
-      if (!secureConfig.secureAddons.includes(this.secureAddonsUrl)) {
-        secureConfig.secureAddons.push(this.secureAddonsUrl);
+      if (!secureConfig.secureAddons.includes(cleanUrl)) {
+        secureConfig.secureAddons.push(cleanUrl);
       }
       
+      // Ensure directory exists
+      await fs.ensureDir(path.dirname(secureConfigPath));
       await fs.writeFile(secureConfigPath, JSON.stringify(secureConfig, null, 2));
-      console.log('Updated secure config with provided URL');
+      console.log('Updated secure config with provided URL:', cleanUrl);
+      console.log('Config written to:', secureConfigPath);
       
     } catch (error) {
       console.error('Failed to inject secure addons URL:', error);
