@@ -7,6 +7,9 @@ const PlaylistGenerator = require('./src/services/playlistGenerator');
 const Logger = require('./src/utils/logger');
 const MESSAGES = require('./src/messages');
 
+// Load environment variables from .env file
+require('dotenv').config();
+
 class StremioPlaylistServer {
   constructor() {
     this.app = express();
@@ -20,42 +23,7 @@ class StremioPlaylistServer {
     this.electronLogCallback = null; // For electron app log forwarding
   }
 
-  async initialize() {
-    try {
-      // Load configuration
-      await this.loadConfig();
-      
-      // Initialize logger
-      this.logger = new Logger(this.config.logging);
-      
-      // Set up electron log forwarding if callback is provided
-      if (this.electronLogCallback) {
-        this.electronLogCallback('info', 'Setting up electron log forwarding...');
-        this.setupElectronLogForwarding();
-      }
-      
-      // Initialize services
-      this.stremioService = new StremioService(this.config, this.logger);
-      this.playlistGenerator = new PlaylistGenerator(this.config.playlist, this.logger);
-      
-      // Setup Express middleware
-      this.setupMiddleware();
-      
-      // Setup routes
-      this.setupRoutes();
-      
-      // Setup scheduled refresh
-      this.setupScheduler();
-      
-      // Initial playlist generation
-      await this.generatePlaylist();
-      
-      this.logger.info(MESSAGES.SERVER.INITIALIZED);
-    } catch (error) {
-      console.error(MESSAGES.CONFIG.INITIALIZE_FAILED, error);
-      process.exit(1);
-    }
-  }
+  // Remove the old initialize method since we're handling initialization in start()
 
   // Method for electron app to set up log forwarding
   setElectronLogCallback(callback) {
@@ -122,48 +90,74 @@ class StremioPlaylistServer {
     try {
       // Determine config path - in packaged app, look in resources directory
       let configPath = path.join(__dirname, 'config.json');
-      let secureConfigPath = path.join(__dirname, 'config.secure.json');
       
       // Check if we're in a packaged app (when running via electron)
-      if (process.resourcesPath) {
-        configPath = path.join(process.resourcesPath, 'config.json');
-        
-        // For secure config in packaged apps, check both locations:
-        // 1. User data directory (where electron writes it)
-        // 2. Resources directory (fallback)
-        const { app } = require('electron');
-        const userDataSecureConfig = path.join(app.getPath('userData'), 'config.secure.json');
-        const resourcesSecureConfig = path.join(process.resourcesPath, 'config.secure.json');
-        
-        // Prefer user data location, fallback to resources
-        if (await fs.pathExists(userDataSecureConfig)) {
-          secureConfigPath = userDataSecureConfig;
-          console.log('Using secure config from user data:', secureConfigPath);
-        } else if (await fs.pathExists(resourcesSecureConfig)) {
-          secureConfigPath = resourcesSecureConfig;
-          console.log('Using secure config from resources:', secureConfigPath);
+      // Use app.isPackaged if available, otherwise check process.resourcesPath
+      const isPackaged = (typeof require !== 'undefined' &&
+                         require.main &&
+                         require.main.filename.includes('app.asar')) ||
+                        (process.resourcesPath && !__dirname.includes('node_modules'));
+      
+      if (isPackaged && process.resourcesPath) {
+        // In packaged apps, always try resources directory first for main config
+        const resourcesConfigPath = path.join(process.resourcesPath, 'config.json');
+        if (await fs.pathExists(resourcesConfigPath)) {
+          configPath = resourcesConfigPath;
+          console.log('Using config from resources:', configPath);
         } else {
-          secureConfigPath = userDataSecureConfig; // Default for writing
-          console.log('No secure config found, will use user data path:', secureConfigPath);
+          console.log('Config not found in resources, using fallback:', configPath);
         }
+      }
+      
+      // Fallback: if config doesn't exist at the calculated path, try the project root
+      if (!await fs.pathExists(configPath)) {
+        configPath = path.join(__dirname, 'config.json');
+        console.log('Config not found at calculated path, using fallback:', configPath);
       }
       
       // Load main config
       const configData = await fs.readFile(configPath, 'utf8');
       this.config = JSON.parse(configData);
       
-      // Check for secure addons URL from environment (set by electron)
-      if (process.env.SECURE_ADDONS_URL) {
-        console.log('Found secure addons URL from environment:', process.env.SECURE_ADDONS_URL);
+      // Initialize arrays to track all addon URLs for deduplication
+      // Normalize URLs by removing /manifest.json and handling URL encoding for comparison
+      const normalizeUrl = (url) => {
+        // Remove /manifest.json suffix
+        let normalized = url.replace(/\/manifest\.json$/, '');
+        // Decode any URL encoding to normalize %3D vs = differences
+        try {
+          normalized = decodeURIComponent(normalized);
+        } catch (e) {
+          // If decoding fails, use original
+        }
+        return normalized;
+      };
+      
+      // Track both normalized URLs and their original forms
+      const urlMap = new Map(); // normalized -> original
+      
+      // Add existing enabled addons (normalized)
+      this.config.sources.enabledAddons.forEach(url => {
+        const normalized = normalizeUrl(url);
+        if (!urlMap.has(normalized)) {
+          urlMap.set(normalized, url);
+        }
+      });
+      
+      // Check for secure Debridio URL from environment (.env file or electron)
+      if (process.env.SECURE_DEBRIDIO_URL) {
+        console.log('Found secure Debridio URL from environment:', process.env.SECURE_DEBRIDIO_URL);
         
-        // Decode URL if it's double-encoded
-        let cleanUrl = process.env.SECURE_ADDONS_URL;
-        if (cleanUrl.includes('%3D')) {
+        // Only decode if it's double-encoded (contains %25 which is encoded %)
+        let cleanUrl = process.env.SECURE_DEBRIDIO_URL;
+        if (cleanUrl.includes('%253D')) {
           cleanUrl = decodeURIComponent(cleanUrl);
-          console.log('Decoded URL from:', process.env.SECURE_ADDONS_URL, 'to:', cleanUrl);
+          console.log('Decoded double-encoded URL from:', process.env.SECURE_DEBRIDIO_URL, 'to:', cleanUrl);
+        } else {
+          console.log('Using URL as-is (properly encoded):', cleanUrl);
         }
         
-        // Add to config directly
+        // Add to secure addons array
         if (!this.config.secureAddons) {
           this.config.secureAddons = [];
         }
@@ -171,47 +165,34 @@ class StremioPlaylistServer {
           this.config.secureAddons.push(cleanUrl);
         }
         
-        // Also add to enabled addons
-        this.config.sources.enabledAddons = [
-          ...this.config.sources.enabledAddons,
-          cleanUrl
-        ];
-        
-        console.log('Added secure addon from environment to config');
-      }
-      
-      // Load secure config file if it exists
-      if (await fs.pathExists(secureConfigPath)) {
-        const secureConfigData = await fs.readFile(secureConfigPath, 'utf8');
-        const secureConfig = JSON.parse(secureConfigData);
-        
-        // Merge secure addons with regular addons and also keep them separate
-        if (secureConfig.secureAddons && Array.isArray(secureConfig.secureAddons)) {
-          // Decode any double-encoded URLs in the config file
-          const cleanSecureAddons = secureConfig.secureAddons.map(url => {
-            if (url.includes('%3D')) {
-              const decoded = decodeURIComponent(url);
-              console.log('Decoded secure addon URL from:', url, 'to:', decoded);
-              return decoded;
-            }
-            return url;
-          });
-          
-          this.config.sources.enabledAddons = [
-            ...this.config.sources.enabledAddons,
-            ...cleanSecureAddons
-          ];
-          // Also keep them in secureAddons for the service to find
-          if (!this.config.secureAddons) {
-            this.config.secureAddons = [];
-          }
-          this.config.secureAddons = [...this.config.secureAddons, ...cleanSecureAddons];
+        // Add normalized URL to the map for deduplication
+        const normalized = normalizeUrl(cleanUrl);
+        if (!urlMap.has(normalized)) {
+          urlMap.set(normalized, cleanUrl);
         }
         
-        this.logger?.info(MESSAGES.CONFIG.SECURE_CONFIG_LOADED);
+        console.log('Added secure Debridio URL from environment to config');
       }
       
-      console.log('Final enabled addons:', this.config.sources.enabledAddons);
+      // Convert to final addon URLs using the original forms
+      const finalAddonUrls = Array.from(urlMap.values()).map(originalUrl => {
+        // For built-in addons, return as-is
+        if (!originalUrl.startsWith('http')) {
+          return originalUrl;
+        }
+        
+        // For HTTP URLs, ensure they have /manifest.json
+        if (!originalUrl.endsWith('/manifest.json')) {
+          return originalUrl + '/manifest.json';
+        }
+        
+        return originalUrl;
+      });
+      
+      // Update enabled addons with deduplicated list
+      this.config.sources.enabledAddons = finalAddonUrls;
+      
+      console.log('Final enabled addons (deduplicated):', this.config.sources.enabledAddons);
     } catch (error) {
       throw new Error(MESSAGES.CONFIG.LOAD_FAILED(error.message));
     }
@@ -281,8 +262,20 @@ class StremioPlaylistServer {
     });
 
     // Get status
-    this.app.get('/status', (req, res) => {
-      res.json({
+    this.app.get('/status', async (req, res) => {
+      // Get channel count from playlist file
+      let channelCount = 0;
+      try {
+        if (await fs.pathExists(this.config.playlist.outputPath)) {
+          const playlistContent = await fs.readFile(this.config.playlist.outputPath, 'utf8');
+          // Count #EXTINF lines (each represents a channel)
+          channelCount = (playlistContent.match(/#EXTINF/g) || []).length;
+        }
+      } catch (error) {
+        console.error('Error reading playlist for channel count:', error);
+      }
+
+      const statusData = {
         server: {
           uptime: process.uptime(),
           memory: process.memoryUsage(),
@@ -292,14 +285,165 @@ class StremioPlaylistServer {
           lastUpdate: this.lastUpdate,
           isUpdating: this.isUpdating,
           outputPath: this.config.playlist.outputPath,
-          refreshInterval: this.config.playlist.refreshInterval
+          refreshInterval: this.config.playlist.refreshInterval,
+          channelCount: channelCount
         },
         config: {
           port: this.config.server.port,
           enabledAddons: this.config.sources.enabledAddons,
           categories: this.config.sources.categories
         }
-      });
+      };
+
+      // Check if request accepts HTML (from browser)
+      if (req.headers.accept && req.headers.accept.includes('text/html')) {
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stremio Debridio Emby Resolver - Status</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            margin: 20px;
+            line-height: 1.4;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #00ccff;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        pre {
+            background: #000;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .refresh-btn {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .refresh-btn:hover {
+            background: #005a99;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .stat-box {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .stat-title {
+            color: #00ccff;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .stat-box div, pre {
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Stremio Debridio Emby Resolver</h1>
+        
+        <button class="refresh-btn" onclick="location.reload()">🔄 Refresh Status</button>
+        <button class="refresh-btn" onclick="clearDebridioUrl()" style="background: #dc3545; margin-left: 10px;">🗑️ Clear Debridio URL</button>
+        
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-title">📊 Server Status</div>
+                <div>Uptime: ${Math.floor(statusData.server.uptime / 60)}m ${Math.floor(statusData.server.uptime % 60)}s</div>
+                <div>Memory: ${Math.round(statusData.server.memory.rss / 1024 / 1024)}MB</div>
+                <div>Version: ${statusData.server.version}</div>
+            </div>
+            
+            <div class="stat-box">
+                <div class="stat-title">📺 Playlist Info</div>
+                <div>Last Update: ${statusData.playlist.lastUpdate ? new Date(statusData.playlist.lastUpdate).toLocaleString() : 'Never'}</div>
+                <div>Status: ${statusData.playlist.isUpdating ? '🔄 Updating' : '✅ Ready'}</div>
+                <div>Channels: ${statusData.playlist.channelCount}</div>
+            </div>
+            
+            <div class="stat-box">
+                <div class="stat-title">⚙️ Configuration</div>
+                <div>Port: ${statusData.config.port}</div>
+                <div>Categories: ${statusData.config.categories.join(', ')}</div>
+            </div>
+        </div>
+        
+        <div class="stat-title">📋 Full Status JSON:</div>
+        <pre id="statusJson" style="cursor: text;">${JSON.stringify(statusData, null, 2)}</pre>
+        
+        <script>
+            // Enable better text selection for JSON
+            document.getElementById('statusJson').addEventListener('click', function() {
+                this.focus();
+            });
+            
+            // Add double-click to select all JSON
+            document.getElementById('statusJson').addEventListener('dblclick', function() {
+                const range = document.createRange();
+                range.selectNodeContents(this);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            });
+            
+            // Function to clear Debridio URL (only works in electron)
+            function clearDebridioUrl() {
+                if (typeof require !== 'undefined') {
+                    try {
+                        const { ipcRenderer } = require('electron');
+                        if (confirm('Are you sure you want to clear the Debridio URL? This will restart the app with the settings dialog.')) {
+                            ipcRenderer.invoke('clear-debridio-url').then(() => {
+                                location.reload();
+                            });
+                        }
+                    } catch (error) {
+                        alert('This feature is only available in the Electron app.');
+                    }
+                } else {
+                    alert('This feature is only available in the Electron app.');
+                }
+            }
+        </script>
+        
+        <div style="text-align: center; margin-top: 30px; color: #666;">
+            <a href="/playlist" style="color: #00ccff;">📺 Download Playlist</a> |
+            <a href="/" style="color: #00ccff;">🏠 Home</a>
+        </div>
+    </div>
+</body>
+</html>`;
+        res.send(html);
+      } else {
+        // Return JSON for API requests
+        res.json(statusData);
+      }
     });
   }
 
@@ -435,8 +579,27 @@ class StremioPlaylistServer {
   }
 
   async start() {
-    await this.initialize();
+    // Load configuration first
+    await this.loadConfig();
     
+    // Initialize logger
+    this.logger = new Logger(this.config.logging);
+    
+    // Set up electron log forwarding if callback is provided
+    if (this.electronLogCallback) {
+      this.electronLogCallback('info', 'Setting up electron log forwarding...');
+      this.setupElectronLogForwarding();
+    }
+    
+    // Initialize services
+    this.stremioService = new StremioService(this.config, this.logger);
+    this.playlistGenerator = new PlaylistGenerator(this.config.playlist, this.logger);
+    
+    // Setup Express middleware and routes
+    this.setupMiddleware();
+    this.setupRoutes();
+    
+    // Start the server FIRST, before playlist generation
     const port = this.config.server.port;
     const host = this.config.server.host;
     
@@ -444,6 +607,25 @@ class StremioPlaylistServer {
       this.logger.info(MESSAGES.SERVER.STARTING(host, port));
       this.logger.info(MESSAGES.SERVER.PLAYLIST_URL(host, port));
       this.logger.info(MESSAGES.SERVER.STATUS_URL(host, port));
+      
+      // Now start the initial playlist generation in the background
+      this.generateInitialPlaylist();
+    });
+    
+    // Setup scheduled refresh
+    this.setupScheduler();
+    
+    this.logger.info(MESSAGES.SERVER.INITIALIZED);
+  }
+
+  async generateInitialPlaylist() {
+    // Run initial playlist generation in background
+    setImmediate(async () => {
+      try {
+        await this.generatePlaylist();
+      } catch (error) {
+        this.logger.error('Initial playlist generation failed:', error);
+      }
     });
   }
 

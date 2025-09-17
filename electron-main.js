@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, shell, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const StremioPlaylistServer = require('./index');
@@ -10,12 +10,19 @@ class ElectronApp {
     this.server = null;
     this.serverPort = this.loadPortFromConfig();
     this.secureAddonsUrl = null;
+    this.userConfig = null;
     
-    // Parse command line arguments for secureAddons URL
+    // Load user configuration
+    this.loadUserConfig();
+    
+    // Parse command line arguments for secure Debridio URL
     this.parseCommandLineArgs();
     
     // Set up app event handlers
     this.setupAppHandlers();
+    
+    // Set up IPC handlers
+    this.setupIPC();
   }
 
   loadPortFromConfig() {
@@ -23,39 +30,30 @@ class ElectronApp {
     // In production, config is in resources directory
     let configPath = path.join(__dirname, 'config.json');
     
-    // Check if we're in a packaged app
-    if (process.resourcesPath) {
+    // Check if we're in a packaged app (app.isPackaged is more reliable)
+    if (app.isPackaged && process.resourcesPath) {
       configPath = path.join(process.resourcesPath, 'config.json');
     }
     
+    // Fallback: if config doesn't exist at the calculated path, try the project root
+    if (!fs.existsSync(configPath)) {
+      configPath = path.join(__dirname, 'config.json');
+    }
+    
+    console.log('Loading config from:', configPath);
     const configData = fs.readFileSync(configPath, 'utf8');
     const config = JSON.parse(configData);
     return config.server.port;
   }
 
   parseCommandLineArgs() {
-    const args = process.argv.slice(2);
-    
-    // Look for --secure-addons-url parameter
-    const secureAddonsIndex = args.findIndex(arg => 
-      arg === '--secure-addons-url' || arg.startsWith('--secure-addons-url=')
-    );
-    
-    if (secureAddonsIndex !== -1) {
-      if (args[secureAddonsIndex].includes('=')) {
-        // Format: --secure-addons-url=https://example.com
-        this.secureAddonsUrl = args[secureAddonsIndex].split('=')[1];
-      } else if (args[secureAddonsIndex + 1]) {
-        // Format: --secure-addons-url https://example.com
-        this.secureAddonsUrl = args[secureAddonsIndex + 1];
-      }
-    }
-
-    console.log('Parsed secure addons URL:', this.secureAddonsUrl);
+    // Skip command line parsing in electron app - we only use user config
+    console.log('Skipping command line parsing in electron app');
   }
 
   setupAppHandlers() {
     app.whenReady().then(() => {
+      this.killExistingInstances();
       this.createWindow();
       this.createTray();
       this.startServer();
@@ -80,6 +78,138 @@ class ElectronApp {
     });
   }
 
+  loadUserConfig() {
+    try {
+      const userDataPath = app.getPath('userData');
+      const configPath = path.join(userDataPath, 'user-config.json');
+      
+      if (fs.existsSync(configPath)) {
+        const configData = fs.readFileSync(configPath, 'utf8');
+        this.userConfig = JSON.parse(configData);
+        console.log('Loaded user config from:', configPath);
+        
+        // Use saved Debridio URL if available
+        if (this.userConfig.debridioUrl) {
+          this.secureAddonsUrl = this.userConfig.debridioUrl;
+          console.log('Using saved Debridio URL from user config');
+        }
+      } else {
+        console.log('No user config found, will create on first setup');
+        this.userConfig = {};
+      }
+    } catch (error) {
+      console.error('Error loading user config:', error);
+      this.userConfig = {};
+    }
+  }
+
+  saveUserConfig() {
+    try {
+      const userDataPath = app.getPath('userData');
+      const configPath = path.join(userDataPath, 'user-config.json');
+      
+      // Ensure directory exists
+      if (!fs.existsSync(userDataPath)) {
+        fs.mkdirSync(userDataPath, { recursive: true });
+      }
+      
+      fs.writeFileSync(configPath, JSON.stringify(this.userConfig, null, 2));
+      console.log('Saved user config to:', configPath);
+    } catch (error) {
+      console.error('Error saving user config:', error);
+    }
+  }
+
+  setupIPC() {
+    // Handle settings requests
+    ipcMain.handle('get-debridio-url', () => {
+      return this.userConfig.debridioUrl || '';
+    });
+
+    ipcMain.handle('save-debridio-url', (event, url) => {
+      this.userConfig.debridioUrl = url;
+      this.secureAddonsUrl = url;
+      this.saveUserConfig();
+      return true;
+    });
+
+    ipcMain.handle('restart-server', async () => {
+      try {
+        if (this.server) {
+          await this.server.stop();
+        }
+        await this.startServer();
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    ipcMain.handle('clear-debridio-url', async () => {
+      try {
+        // Clear the user config
+        this.userConfig.debridioUrl = '';
+        this.secureAddonsUrl = null;
+        this.saveUserConfig();
+        
+        // Clear environment variable
+        delete process.env.SECURE_DEBRIDIO_URL;
+        
+        // Stop the server
+        if (this.server) {
+          await this.server.stop();
+        }
+        
+        // Show settings dialog again
+        setTimeout(() => {
+          this.showSettingsDialog();
+        }, 500);
+        
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    });
+
+    // Handle context menu for input fields
+    ipcMain.handle('show-context-menu', (event) => {
+      const template = [
+        {
+          label: 'Cut',
+          accelerator: 'CmdOrCtrl+X',
+          click: () => {
+            event.sender.cut();
+          }
+        },
+        {
+          label: 'Copy',
+          accelerator: 'CmdOrCtrl+C',
+          click: () => {
+            event.sender.copy();
+          }
+        },
+        {
+          label: 'Paste',
+          accelerator: 'CmdOrCtrl+V',
+          click: () => {
+            event.sender.paste();
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Select All',
+          accelerator: 'CmdOrCtrl+A',
+          click: () => {
+            event.sender.selectAll();
+          }
+        }
+      ];
+      
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    });
+  }
+
   createWindow() {
     this.mainWindow = new BrowserWindow({
       width: 1000,
@@ -87,31 +217,76 @@ class ElectronApp {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        enableRemoteModule: false
+        enableRemoteModule: false,
+        allowRunningInsecureContent: true,
+        webSecurity: false // Allow localhost HTTP content
       },
       // icon: path.join(__dirname, 'assets', 'icon.png'), // Add icon if available
       title: 'Stremio Debridio Emby Resolver'
     });
 
-    // Load the server's web interface once it's ready
-    this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+    // Fix MaxListenersExceededWarning
+    this.mainWindow.webContents.setMaxListeners(20);
+
+    // Wait for server to be ready before deciding what to show
+    setTimeout(() => {
+      if (!this.secureAddonsUrl) {
+        console.log('No secure addon URL found, showing settings dialog');
+        this.showSettingsDialog();
+      } else {
+        console.log('Secure addon URL found, waiting for server then loading status page');
+        // Wait for server to be fully ready
+        this.waitForServerThenLoadStatus();
+      }
+    }, 1000);
     
-    // Inject logging overlay after page loads
-    this.mainWindow.webContents.once('did-finish-load', () => {
-      this.injectLoggingOverlay();
-      
-      // Test adding log entries directly after overlay is ready
-      setTimeout(() => {
-        this.mainWindow.webContents.executeJavaScript(`
-          if (typeof window.addLogEntry === 'function') {
-            window.addLogEntry('info', 'Direct test message from electron');
-            window.addLogEntry('warn', 'Testing if log forwarding works');
+    // Temporarily disable log overlay to test if it's causing the white screen
+    // this.mainWindow.webContents.on('did-finish-load', () => {
+    //   // Log overlay injection disabled for debugging
+    // });
+  }
+
+  waitForServerThenLoadStatus() {
+    console.log('Waiting for server to be ready...');
+    
+    // Show a loading page while waiting for server
+    this.mainWindow.loadURL('data:text/html,<html><body style="background:#1a1a1a;color:#00ff00;padding:20px;font-family:monospace;text-align:center;"><h1>🎬 Stremio Debridio Emby Resolver</h1><p>Starting server...</p><div style="margin:20px;">⏳</div></body></html>');
+    
+    // Check if server is ready by trying to connect
+    const checkServer = async () => {
+      try {
+        const response = await fetch(`http://localhost:${this.serverPort}/health`);
+        if (response.ok) {
+          console.log('Server is ready, checking if content is being fetched...');
+          
+          // Check if server is currently updating/fetching content
+          try {
+            const statusResponse = await fetch(`http://localhost:${this.serverPort}/status`);
+            const statusData = await statusResponse.json();
+            
+            if (statusData.playlist && statusData.playlist.isUpdating) {
+              console.log('Server is fetching content, showing refreshing screen');
+              // Load the status page which will show the refreshing state
+              this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+            } else {
+              console.log('Server is ready and not updating, loading status page');
+              this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+            }
+          } catch (statusError) {
+            console.log('Could not get status, loading status page anyway');
+            this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
           }
-        `).catch(err => {
-          console.error('Failed to add test log entries:', err);
-        });
-      }, 1000);
-    });
+        } else {
+          throw new Error('Server not ready');
+        }
+      } catch (error) {
+        console.log('Server not ready yet, retrying...');
+        setTimeout(checkServer, 1000);
+      }
+    };
+    
+    // Start checking immediately since server now starts faster
+    setTimeout(checkServer, 500);
 
     // Open external links in default browser
     this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -126,10 +301,427 @@ class ElectronApp {
         this.mainWindow.hide();
       }
     });
+
+    // Set up application menu
+    this.createMenu();
+  }
+
+  showSettingsDialog() {
+    const settingsHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debridio Configuration</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #00ccff;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #cccccc;
+            font-weight: 500;
+        }
+        input[type="url"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #444;
+            border-radius: 6px;
+            background: #333;
+            color: #fff;
+            font-size: 14px;
+            box-sizing: border-box;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+            -webkit-touch-callout: default !important;
+            -webkit-tap-highlight-color: transparent;
+        }
+        input[type="url"]:focus {
+            outline: none;
+            border-color: #00ccff;
+        }
+        .example {
+            background: #333;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            margin-top: 8px;
+            word-break: break-all;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
+            user-select: text !important;
+            cursor: text;
+        }
+        .button-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn-primary {
+            background: #007acc;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #005a99;
+        }
+        .btn-secondary {
+            background: #666;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #555;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+        .example {
+            background: #333;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 11px;
+            margin-top: 8px;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Debridio Configuration</h1>
+        <form id="settingsForm">
+            <div class="form-group">
+                <label for="debridioUrl">Debridio URL:</label>
+                <input type="url" id="debridioUrl" placeholder="https://tv-addon.debridio.com/your-config/manifest.json" required pattern="https://.*debridio\.com/.*manifest\.json$">
+                <div class="help-text">
+                    Enter your Debridio addon URL. Must be a valid Debridio manifest URL ending with manifest.json
+                </div>
+                <div class="example">
+                    Example: https://tv-addon.debridio.com/your-base64-encoded-config/manifest.json
+                </div>
+                <div id="urlError" style="color: #ff4444; font-size: 12px; margin-top: 4px; display: none;">
+                    Please enter a valid Debridio manifest URL (must contain 'debridio.com' and end with 'manifest.json')
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" class="btn-primary">Save & Start</button>
+                <button type="button" id="cancelBtn" class="btn-secondary">Cancel</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        // Load existing URL if available
+        ipcRenderer.invoke('get-debridio-url').then(url => {
+            if (url) {
+                document.getElementById('debridioUrl').value = url;
+            }
+        });
+
+        // Enable right-click context menu for paste functionality
+        document.addEventListener('contextmenu', async (e) => {
+            e.preventDefault();
+            await ipcRenderer.invoke('show-context-menu');
+        });
+
+        // Enable keyboard shortcuts and ensure input works properly
+        document.addEventListener('keydown', (e) => {
+            // Allow all normal keyboard input
+            if (e.target.tagName === 'INPUT') {
+                // Don't prevent default for normal typing
+                if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+                    return true;
+                }
+                
+                if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                    // Allow paste
+                    return true;
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+                    // Allow copy
+                    return true;
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+                    // Allow cut
+                    return true;
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+                    e.target.select();
+                    e.preventDefault();
+                    return false;
+                }
+            }
+        });
+
+        // Ensure input field is properly focusable and selectable
+        document.addEventListener('DOMContentLoaded', () => {
+            const input = document.getElementById('debridioUrl');
+            if (input) {
+                // Make sure the input can receive focus and selection
+                input.addEventListener('focus', () => {
+                    console.log('Input focused');
+                });
+                
+                input.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    input.focus();
+                });
+                
+                // Allow text selection on double-click
+                input.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    input.select();
+                });
+            }
+        });
+
+        // URL validation function
+        function validateDebridioUrl(url) {
+            if (!url) return false;
+            
+            // Must be HTTPS
+            if (!url.startsWith('https://')) return false;
+            
+            // Must contain debridio.com
+            if (!url.includes('debridio.com')) return false;
+            
+            // Must end with manifest.json
+            if (!url.endsWith('manifest.json')) return false;
+            
+            return true;
+        }
+
+        // Real-time validation
+        document.getElementById('debridioUrl').addEventListener('input', (e) => {
+            const url = e.target.value.trim();
+            const errorDiv = document.getElementById('urlError');
+            const submitBtn = document.querySelector('button[type="submit"]');
+            
+            if (url && !validateDebridioUrl(url)) {
+                errorDiv.style.display = 'block';
+                submitBtn.disabled = true;
+                submitBtn.style.opacity = '0.5';
+            } else {
+                errorDiv.style.display = 'none';
+                submitBtn.disabled = false;
+                submitBtn.style.opacity = '1';
+            }
+        });
+
+        document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('debridioUrl').value.trim();
+            
+            if (!validateDebridioUrl(url)) {
+                document.getElementById('urlError').style.display = 'block';
+                return;
+            }
+            
+            if (url) {
+                await ipcRenderer.invoke('save-debridio-url', url);
+                
+                // Show loading message
+                document.body.innerHTML = '<div style="background:#1a1a1a;color:#00ff00;padding:20px;font-family:monospace;text-align:center;height:100vh;display:flex;flex-direction:column;justify-content:center;"><h1>🎬 Restarting Server</h1><p>Please wait while the server restarts with your new configuration...</p><div style="margin:20px;">⏳</div></div>';
+                
+                // Restart server with new URL
+                const result = await ipcRenderer.invoke('restart-server');
+                if (result.success) {
+                    // Wait for server to be ready, then redirect
+                    const checkServer = async () => {
+                        try {
+                            const response = await fetch('http://localhost:' + ${this.serverPort} + '/health');
+                            if (response.ok) {
+                                window.location.href = 'http://localhost:' + ${this.serverPort} + '/status';
+                            } else {
+                                throw new Error('Server not ready');
+                            }
+                        } catch (error) {
+                            setTimeout(checkServer, 1000);
+                        }
+                    };
+                    setTimeout(checkServer, 2000);
+                } else {
+                    alert('Error restarting server: ' + result.error);
+                }
+            }
+        });
+
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            window.close();
+        });
+    </script>
+</body>
+</html>`;
+
+    try {
+      const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(settingsHtml);
+      console.log('Loading settings dialog...');
+      this.mainWindow.loadURL(dataUrl);
+    } catch (error) {
+      console.error('Error loading settings dialog:', error);
+      // Fallback to a simple settings page
+      this.mainWindow.loadURL('data:text/html,<html><body style="background:#1a1a1a;color:#fff;padding:20px;"><h1>Settings Error</h1><p>Please restart the app.</p></body></html>');
+    }
+  }
+
+  createMenu() {
+    const template = [
+      {
+        label: 'File',
+        submenu: [
+          {
+            label: 'Settings...',
+            accelerator: 'CmdOrCtrl+,',
+            click: () => {
+              this.showSettingsDialog();
+            }
+          },
+          { type: 'separator' },
+          {
+            label: 'Refresh Playlist',
+            accelerator: 'CmdOrCtrl+R',
+            click: async () => {
+              try {
+                const response = await fetch(`http://localhost:${this.serverPort}/refresh`, {
+                  method: 'POST'
+                });
+                const result = await response.json();
+                
+                dialog.showMessageBox(this.mainWindow, {
+                  type: 'info',
+                  title: 'Playlist Refresh',
+                  message: result.message || 'Playlist refreshed successfully'
+                });
+              } catch (error) {
+                dialog.showErrorBox('Refresh Error', 'Failed to refresh playlist: ' + error.message);
+              }
+            }
+          },
+          { type: 'separator' },
+          {
+            label: 'Quit',
+            accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+            click: () => {
+              app.isQuiting = true;
+              app.quit();
+            }
+          }
+        ]
+      },
+      {
+        label: 'View',
+        submenu: [
+          {
+            label: 'Status Page',
+            accelerator: 'CmdOrCtrl+1',
+            click: () => {
+              this.mainWindow.loadURL(`http://localhost:${this.serverPort}/status`);
+            }
+          },
+          {
+            label: 'Download Playlist',
+            accelerator: 'CmdOrCtrl+2',
+            click: () => {
+              shell.openExternal(`http://localhost:${this.serverPort}/playlist`);
+            }
+          },
+          { type: 'separator' },
+          { role: 'reload' },
+          { role: 'forceReload' },
+          { role: 'toggleDevTools' }
+        ]
+      },
+      {
+        label: 'Window',
+        submenu: [
+          { role: 'minimize' },
+          { role: 'close' }
+        ]
+      }
+    ];
+
+    if (process.platform === 'darwin') {
+      template.unshift({
+        label: app.getName(),
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' }
+        ]
+      });
+
+      // Window menu
+      template[3].submenu = [
+        { role: 'close' },
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'separator' },
+        { role: 'front' }
+      ];
+    }
+
+    const menu = Menu.buildFromTemplate(template);
+    Menu.setApplicationMenu(menu);
   }
 
   injectLoggingOverlay() {
-    this.mainWindow.webContents.executeJavaScript(`
+    try {
+      if (!this.mainWindow || this.mainWindow.isDestroyed()) {
+        console.log('Cannot inject logging overlay - window not available');
+        return;
+      }
+      
+      this.mainWindow.webContents.executeJavaScript(`
       // Create logging overlay
       const overlay = document.createElement('div');
       overlay.id = 'logging-overlay';
@@ -258,6 +850,9 @@ class ElectronApp {
       // Add initial message
       window.addLogEntry('info', 'Logging overlay initialized');
     `);
+    } catch (error) {
+      console.error('Error injecting logging overlay:', error);
+    }
   }
 
   createTray() {
@@ -336,10 +931,16 @@ class ElectronApp {
   async startServer() {
     console.log('=== ELECTRON startServer() method called ===');
     try {
-      // If secureAddonsUrl is provided, inject it into the environment or config
+      // If secureAddonsUrl is provided, inject it into the environment
+      // Clear any existing environment variable to prevent duplicates
+      delete process.env.SECURE_DEBRIDIO_URL;
+      
+      // Set the environment variable ONLY if we have a URL from user config
       if (this.secureAddonsUrl) {
-        process.env.SECURE_ADDONS_URL = this.secureAddonsUrl;
-        console.log('Set secure addons URL from command line: ' + this.secureAddonsUrl);
+        process.env.SECURE_DEBRIDIO_URL = this.secureAddonsUrl;
+        console.log('Set secure Debridio URL for server: ' + this.secureAddonsUrl);
+      } else {
+        console.log('No Debridio URL configured - server will run without Debridio content');
       }
 
       console.log('Creating StremioPlaylistServer...');
@@ -371,10 +972,8 @@ class ElectronApp {
         console.log('ERROR: Callback was not set properly');
       }
       
-      // Modify the server to use the secure addons URL if provided
-      if (this.secureAddonsUrl) {
-        await this.injectSecureAddonsUrl();
-      }
+      // Note: No need to inject into config file anymore,
+      // the server will read from environment variable directly
       
       console.log('Starting server...');
       await this.server.start();
@@ -410,55 +1009,38 @@ class ElectronApp {
     }
   }
 
-  async injectSecureAddonsUrl() {
-    const fs = require('fs-extra');
-    const path = require('path');
+
+  killExistingInstances() {
+    const { exec } = require('child_process');
+    const os = require('os');
     
-    try {
-      // Determine the correct config path (same logic as loadPortFromConfig)
-      let secureConfigPath = path.join(__dirname, 'config.secure.json');
-      
-      // Check if we're in a packaged app
-      if (process.resourcesPath) {
-        // In packaged apps, we need to write to a writable location
-        const { app } = require('electron');
-        const userDataPath = app.getPath('userData');
-        secureConfigPath = path.join(userDataPath, 'config.secure.json');
-        console.log('Using user data path for secure config:', secureConfigPath);
-      }
-      
-      let secureConfig = {};
-      
-      if (await fs.pathExists(secureConfigPath)) {
-        const configData = await fs.readFile(secureConfigPath, 'utf8');
-        secureConfig = JSON.parse(configData);
-      }
-      
-      // Ensure the URL is properly decoded (fix double encoding issue)
-      let cleanUrl = this.secureAddonsUrl;
-      if (cleanUrl.includes('%3D')) {
-        cleanUrl = decodeURIComponent(cleanUrl);
-        console.log('Decoded URL from:', this.secureAddonsUrl, 'to:', cleanUrl);
-      }
-      
-      // Add the secure addons URL to the config
-      if (!secureConfig.secureAddons) {
-        secureConfig.secureAddons = [];
-      }
-      
-      // Add the URL if it's not already present
-      if (!secureConfig.secureAddons.includes(cleanUrl)) {
-        secureConfig.secureAddons.push(cleanUrl);
-      }
-      
-      // Ensure directory exists
-      await fs.ensureDir(path.dirname(secureConfigPath));
-      await fs.writeFile(secureConfigPath, JSON.stringify(secureConfig, null, 2));
-      console.log('Updated secure config with provided URL:', cleanUrl);
-      console.log('Config written to:', secureConfigPath);
-      
-    } catch (error) {
-      console.error('Failed to inject secure addons URL:', error);
+    if (os.platform() === 'darwin') {
+      // macOS
+      exec('pkill -f "Electron.*stremio-debridio-emby-resolver"', (error) => {
+        if (error && error.code !== 1) { // code 1 means no processes found, which is fine
+          console.log('Note: Could not kill existing processes:', error.message);
+        } else {
+          console.log('Killed any existing Electron instances');
+        }
+      });
+    } else if (os.platform() === 'win32') {
+      // Windows
+      exec('taskkill /f /im electron.exe', (error) => {
+        if (error && error.code !== 128) { // code 128 means no processes found
+          console.log('Note: Could not kill existing processes:', error.message);
+        } else {
+          console.log('Killed any existing Electron instances');
+        }
+      });
+    } else {
+      // Linux
+      exec('pkill -f electron', (error) => {
+        if (error && error.code !== 1) {
+          console.log('Note: Could not kill existing processes:', error.message);
+        } else {
+          console.log('Killed any existing Electron instances');
+        }
+      });
     }
   }
 

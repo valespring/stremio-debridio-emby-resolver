@@ -1,7 +1,6 @@
 const axios = require('axios');
 const MESSAGES = require('../messages');
 const LogoService = require('./logoService');
-const { FALLBACK_CHANNELS } = require('../channels/fallback');
 
 class StremioService {
   constructor(config, logger) {
@@ -38,7 +37,7 @@ class StremioService {
       // Check if we have any install URLs (like Debridio) and generate content for them
       const hasInstallUrls = sourcesConfig.enabledAddons.some(addon => this.isInstallUrl(addon));
       if (hasInstallUrls) {
-        this.logger.info(MESSAGES.DEBRIDIO.FALLBACK_CHANNELS);
+        this.logger.info('Attempting to fetch Debridio content...');
         const debridioContent = await this.fetchDebridioContent({ name: 'Debridio - TV' });
         content.push(...debridioContent);
       }
@@ -166,39 +165,11 @@ class StremioService {
         return realChannels;
       }
     } catch (error) {
-      this.logger.warn(MESSAGES.DEBRIDIO.SEQUENTIAL_FETCH_FAILED, error.message);
+      this.logger.warn('Could not fetch Debridio channels: ' + error.message);
     }
     
-    this.logger.info(MESSAGES.DEBRIDIO.FALLBACK_CHANNELS);
-
-    
-    const content = [];
-    
-    for (const channel of FALLBACK_CHANNELS) {
-      content.push({
-        id: `debridio_${channel.toLowerCase()}`,
-        title: channel.replace('_', ' '),
-        type: 'tv',
-        year: new Date().getFullYear(),
-        genre: 'Live TV',
-        language: 'en',
-        addon: 'Debridio - TV',
-        streams: [{
-          url: `http://fl6.tv.debridio.com/${channel}/index.m3u8`,
-          quality: 'Live HD',
-          source: 'Debridio',
-          title: `${channel} Live Stream`,
-          availability: true
-        }],
-        poster: this.logoService.generatePlaceholderLogo(channel.replace('_', ' ')),
-        description: `Live ${channel.replace('_', ' ')} channel from Debridio`,
-        imdbRating: '0.0',
-        duration: null
-      });
-    }
-    
-    this.logger.info(MESSAGES.DEBRIDIO.GENERATED_FALLBACK(content.length));
-    return content;
+    this.logger.warn('Could not fetch any Debridio channels - no content available');
+    return [];
   }
 
   async fetchRealDebridioChannels() {

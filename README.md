@@ -313,11 +313,33 @@ Create a `.desktop` file with the appropriate Exec line including the parameter
 
 #### Application Features
 Once launched, access these features:
+- **Configuration UI**: Built-in settings dialog for easy Debridio URL configuration
+- **Settings Menu**: Access settings via File → Settings or Cmd/Ctrl+, keyboard shortcut
 - **System tray**: Right-click for quick access to controls (if tray icon is available)
 - **Web interface**: Built-in browser interface for monitoring and control
 - **Playlist file**: Generated M3U playlist at `./playlist.m3u`
 - **Logo cache**: High-quality logos cached in `./cache/logos/`
 - **Real-time updates**: Live status and progress monitoring
+
+#### Configuration UI
+The desktop app includes a built-in configuration interface:
+
+**First Launch:**
+- If no Debridio URL is configured, the app automatically opens the settings dialog
+- Enter your Debridio addon URL (e.g., `https://your-debridio-url.com/manifest.json`)
+- The URL is securely stored in your user data directory
+- Click "Save & Start Server" to begin content fetching
+
+**Changing Settings:**
+- Access settings via the File menu → Settings
+- Use keyboard shortcut: Cmd+, (macOS) or Ctrl+, (Windows/Linux)
+- Paste functionality available with right-click context menu
+- "Clear Debridio URL" button to reset configuration
+
+**Settings Storage:**
+- Configuration is stored in `user-config.json` in your system's user data directory
+- Settings persist between app launches
+- Safe for packaged applications (no file system access required)
 
 ### Server Mode
 

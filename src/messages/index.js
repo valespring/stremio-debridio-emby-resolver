@@ -11,8 +11,7 @@ const MESSAGES = {
   CONFIG: {
     LOAD_FAILED: (error) => `Failed to load config: ${error}`,
     INITIALIZE_FAILED: 'Failed to initialize server:',
-    START_FAILED: 'Failed to start server:',
-    SECURE_CONFIG_LOADED: 'Secure configuration loaded and merged'
+    START_FAILED: 'Failed to start server:'
   },
   PLAYLIST: {
     GENERATION_STARTED: 'Starting playlist generation',
@@ -108,8 +107,6 @@ const MESSAGES = {
   DEBRIDIO: {
     SEQUENTIAL_FETCH_START: 'Attempting sequential fetch of real Debridio channels...',
     SEQUENTIAL_FETCH_SUCCESS: (count) => `Successfully fetched ${count} real Debridio channels`,
-    SEQUENTIAL_FETCH_FAILED: 'Sequential fetch failed, using expanded fallback:',
-    FALLBACK_CHANNELS: 'Using expanded fallback channel list with real logos',
     CHANNEL_CONFIG_DETECTED: (config) => `Detected channel configuration: ${JSON.stringify(config)}`,
     MANIFEST_FETCH: (url) => `Fetching Debridio manifest from: ${url}`,
     CATALOGS_FOUND: (count) => `Found ${count} TV catalogs, processing sequentially...`,
@@ -122,7 +119,6 @@ const MESSAGES = {
     STREAMS_FETCH: (name) => `Fetching streams for channel: ${name}`,
     STREAMS_SUCCESS: (name) => `Successfully processed channel: ${name}`,
     STREAMS_FAILED: (name, error) => `Failed to process real Debridio channel ${name}: ${error}`,
-    GENERATED_FALLBACK: (count) => `Generated ${count} Debridio channels (fallback)`,
     CATALOG_FETCH_FAILED: (catalogId, error) => `Failed to fetch catalog ${catalogId}: ${error}`,
     REAL_CHANNELS_ERROR: (error) => `Error fetching real Debridio channels: ${error}`,
     CHANNEL_INFO_DECODE_FAILED: (error) => `Could not decode channel info from URL: ${error}`,
